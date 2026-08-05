@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Voice agent + personalities</title>
+  <title>Voice → Voice agent (patient VAD)</title>
   <style>
     :root { --bg:#09090b; --panel:#141416; --line:rgba(255,255,255,.1); --fg:#fafafa; --muted:#a1a1aa; --accent:#10a37f; --red:#f87171; }
     body { margin:0; font-family:ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--fg); padding:24px; }
@@ -15,32 +15,61 @@
     button.hot { background:var(--red); color:#fff; border:0; }
     #log { font-size:13px; line-height:1.45; max-height:280px; overflow:auto; white-space:pre-wrap; }
     .u { color:#7dd3fc; } .a { color:#86efac; }
+    .meta { color:var(--muted); font-size:12px; margin-top:8px; }
+    label { display:block; margin-top:10px; font-size:13px; color:var(--muted); }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <p><a href="index.html">← Stack</a></p>
+    <p><a href="index.html">← Stack</a> · <a href="demo-patient.html">Patient VAD demo</a></p>
     <h1>Voice → Voice agent</h1>
-    <p style="color:var(--muted)">Hear you → route with personality → speak back. Plug an LLM via <code>setBrain</code>.</p>
+    <p style="color:var(--muted)">
+      Full-duplex style loop with <strong>patient listening</strong> (default 1400&nbsp;ms silence + semantic turn end).
+      Hear you → hold the turn patiently → route with personality → speak back. Barge-in cancels TTS mid-reply.
+    </p>
     <div class="card">
       <label>Personality
         <select id="pers"></select>
+      </label>
+      <label>Scenario (silence)
+        <select id="scenario">
+          <option value="patient" selected>Patient 1400 ms (travel / healthcare)</option>
+          <option value="standard">Standard 650 ms</option>
+          <option value="fast_command">Fast command 300 ms</option>
+          <option value="dictation">Dictation 2000 ms</option>
+        </select>
+      </label>
+      <label>Context expert
+        <select id="expert">
+          <option value="hotel_host" selected>Hotel Host</option>
+          <option value="airport_guide">Airport Guide</option>
+          <option value="transit_concierge">Transit Concierge</option>
+          <option value="dining_diplomat">Dining Diplomat</option>
+          <option value="general">General</option>
+        </select>
       </label>
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="primary" id="mic">🎙 Start</button>
         <button type="button" id="greet">Greet</button>
       </div>
+      <div class="meta" id="listenMeta">Listening: patient · 1400 ms</div>
       <div id="log" style="margin-top:16px"></div>
     </div>
   </div>
   <script src="src/stt.js"></script>
   <script src="src/tts.js"></script>
+  <script src="src/turn-detection.js"></script>
+  <script src="src/stt-patient.js"></script>
   <script src="src/personalities.js"></script>
   <script src="src/business.js"></script>
   <script src="src/agent.js"></script>
   <script>
     const log = document.getElementById('log');
     const pers = document.getElementById('pers');
+    const scenario = document.getElementById('scenario');
+    const expert = document.getElementById('expert');
+    const listenMeta = document.getElementById('listenMeta');
+
     PocketVoicePersonalities.list().forEach(p => {
       const o = document.createElement('option');
       o.value = p.id; o.textContent = p.name + ' — ' + p.style;
@@ -50,19 +79,41 @@
       log.innerHTML += '<div class="'+who+'"><b>'+who+'</b>: '+t+'</div>';
       log.scrollTop = log.scrollHeight;
     }
+    function refreshMeta() {
+      const st = agent.listening && agent.listening();
+      if (st) {
+        listenMeta.textContent = 'Listening: ' + (st.scenario || 'patient') +
+          ' · ' + (st.silence_ms || st.threshold_ms || 1400) + ' ms' +
+          (st.expert ? ' · expert ' + st.expert : '') +
+          (agent.isPatient && agent.isPatient() ? ' · patient VAD on' : '');
+      }
+    }
     const agent = PocketVoiceAgent.create({
       personality: 'support',
       businessMode: 'customer_service',
+      patient: true,
+      scenario: 'patient',
+      expert: 'hotel_host',
+      barge_in: 'medium',
       onTranscript: (t, who) => line(who === 'user' ? 'u' : 'a', t),
+      onBargeIn: () => { line('a', '[barge-in — stopped speaking]'); },
       onMicState: (on) => {
         const b = document.getElementById('mic');
         b.className = on ? 'hot' : 'primary';
         b.textContent = on ? '🎙 Listening…' : '🎙 Start';
+        refreshMeta();
       },
     });
     pers.onchange = () => agent.setPersonality(pers.value);
+    function applyListen() {
+      agent.configureListening({ scenario: scenario.value, expert: expert.value, barge_in: 'medium' });
+      refreshMeta();
+    }
+    scenario.onchange = applyListen;
+    expert.onchange = applyListen;
     document.getElementById('mic').onclick = () => agent.toggle();
     document.getElementById('greet').onclick = () => agent.greet();
+    applyListen();
   </script>
 </body>
 </html>

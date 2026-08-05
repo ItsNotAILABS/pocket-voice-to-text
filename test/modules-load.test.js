@@ -34,6 +34,22 @@ describe("module load (UMD factories)", () => {
     assert.equal(typeof Agent.create, "function");
     const a = Agent.create({ speakReplies: false });
     assert.equal(typeof a.inject, "function");
+    assert.equal(a.isPatient(), true);
+    assert.equal(typeof a.configureListening, "function");
+    const st = a.configureListening({ scenario: "patient", stress: 0.5, expert: "airport_guide" });
+    assert.ok(st);
+    assert.equal(st.scenario, "patient");
+  });
+  it("agent classic stt when patient:false", () => {
+    const Agent = require("../src/agent");
+    const a = Agent.create({ speakReplies: false, patient: false });
+    assert.equal(a.isPatient(), false);
+  });
+  it("loads patient stt + turn detection", () => {
+    const Patient = require("../src/stt-patient");
+    const Turn = require("../src/turn-detection");
+    assert.equal(typeof Patient.create, "function");
+    assert.equal(Turn.SCENARIOS.patient.silence_ms, 1400);
   });
   it("loads pocket-voice facade", () => {
     const Stack = require("../src/pocket-voice");

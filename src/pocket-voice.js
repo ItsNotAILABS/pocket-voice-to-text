@@ -48,10 +48,16 @@
             brain: opts.brain || null,
             speakReplies: opts.speakReplies !== false,
             remoteSpeak: opts.remoteSpeak,
+            patient: opts.patient !== false,
+            scenario: opts.scenario || "patient",
+            stress: opts.stress || 0,
+            expert: opts.expert || "hotel_host",
+            barge_in: opts.barge_in || "medium",
             onReply: opts.onSpeak || opts.onReply || function () {},
             onTranscript: function (t, who) {
               if (opts.onTranscript) opts.onTranscript(t, who);
             },
+            onBargeIn: opts.onBargeIn || function () {},
             onMicState: opts.onState || function () {},
             onError: opts.onError || function () {},
             lang: opts.lang,
