@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Pocket Voice-to-Text</title>
+  <style>
+    :root { --bg:#09090b; --panel:#141416; --line:rgba(255,255,255,.1); --fg:#fafafa; --muted:#a1a1aa; --accent:#10a37f; --red:#f87171; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; font-family:ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--fg);
+      display:flex; align-items:center; justify-content:center; padding:24px; }
+    .card { width:min(520px,100%); background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px; }
+    h1 { margin:0 0 6px; font-size:1.35rem; letter-spacing:-.03em; }
+    p { margin:0 0 16px; color:var(--muted); font-size:14px; line-height:1.5; }
+    textarea { width:100%; min-height:140px; border-radius:12px; border:1px solid var(--line); background:#0c0c0e;
+      color:var(--fg); padding:12px; font-size:15px; resize:vertical; }
+    .row { display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+    button { border:0; border-radius:10px; padding:11px 16px; font-weight:700; font-size:14px; cursor:pointer; }
+    .mic { background:var(--accent); color:#041; }
+    .mic.hot { background:var(--red); color:#fff; animation: pulse 1.2s infinite; }
+    .ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
+    .status { font-size:12px; color:var(--muted); }
+    @keyframes pulse { 50% { opacity: .75; } }
+    a { color:var(--accent); }
+    code { font-size:12px; background:#0c0c0e; padding:2px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Pocket Voice-to-Text</h1>
+    <p>Open-source mic → text. Continuous listen until you click off. Used in POCKET’s chat composer — available here as a tiny side project.</p>
+    <textarea id="out" placeholder="Click the mic and speak…"></textarea>
+    <div class="row">
+      <button type="button" class="mic" id="mic">🎙 Mic off</button>
+      <button type="button" class="ghost" id="clear">Clear</button>
+      <span class="status" id="status">Ready</span>
+    </div>
+    <p style="margin-top:18px;font-size:12px">Requires Chrome, Edge, or Safari · localhost or HTTPS ·
+      <a href="https://github.com/ItsNotAILABS/pocket-voice-to-text">GitHub</a> ·
+      main product: <a href="https://github.com/ItsNotAILABS/pocket">POCKET</a></p>
+  </div>
+  <script src="voice-to-text.js"></script>
+  <script>
+    const out = document.getElementById('out');
+    const mic = document.getElementById('mic');
+    const status = document.getElementById('status');
+    const voice = PocketVoice.create({
+      onFinal: (t) => { out.value = (out.value ? out.value + ' ' : '') + t; },
+      onInterim: (t) => { status.textContent = 'Hearing: ' + t.slice(0, 40); },
+      onState: (on) => {
+        mic.classList.toggle('hot', on);
+        mic.textContent = on ? '🎙 Listening…' : '🎙 Mic off';
+        status.textContent = on ? 'Listening (click mic to stop)' : 'Ready';
+      },
+      onError: (code) => {
+        status.textContent = 'Error: ' + code;
+        if (code === 'unsupported') status.textContent = 'Use Chrome, Edge, or Safari';
+      },
+    });
+    if (!voice.available()) status.textContent = 'Web Speech API not available in this browser';
+    mic.onclick = () => voice.toggle();
+    document.getElementById('clear').onclick = () => { out.value = ''; };
+  </script>
+</body>
+</html>
