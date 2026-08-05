@@ -1,21 +1,13 @@
 /**
- * Back-compat entry: re-exports STT as PocketVoice.create
- * Prefer src/pocket-voice.js for the full stack.
+ * Back-compat: PocketVoice.create for STT (browser).
+ * Prefer src/pocket-voice.js or src/node-entry.js for full stack / Node API.
  */
-(function () {
-  // If stt already loaded
-  if (typeof PocketVoiceSTT !== "undefined") {
-    window.PocketVoice = PocketVoiceSTT;
-    return;
-  }
-  // Inline minimal STT (same as before) if used alone
-  document.write && 0; // no-op
-})();
-
-// Full inline STT for single-file include without src/
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else root.PocketVoice = factory();
+  if (typeof module === "object" && module.exports) {
+    module.exports = factory();
+  } else {
+    root.PocketVoice = factory();
+  }
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
   function create(opts) {
@@ -27,7 +19,9 @@
     var onError = opts.onError || function () {};
     var SR = null;
     try {
-      SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (typeof window !== "undefined") {
+        SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      }
     } catch (_) {}
     var micOn = false,
       rec = null,
@@ -68,11 +62,12 @@
           }
         };
         rec.onend = function () {
-          if (micOn) restartTimer = setTimeout(function () {
-            try {
-              if (micOn) startRec();
-            } catch (_) {}
-          }, 280);
+          if (micOn)
+            restartTimer = setTimeout(function () {
+              try {
+                if (micOn) startRec();
+              } catch (_) {}
+            }, 280);
         };
         rec.start();
       } catch (e) {
