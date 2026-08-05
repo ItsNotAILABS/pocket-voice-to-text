@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Voice agent + personalities</title>
+  <style>
+    :root { --bg:#09090b; --panel:#141416; --line:rgba(255,255,255,.1); --fg:#fafafa; --muted:#a1a1aa; --accent:#10a37f; --red:#f87171; }
+    body { margin:0; font-family:ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--fg); padding:24px; }
+    .wrap { max-width:720px; margin:0 auto; }
+    a { color:var(--accent); }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; margin-top:12px; }
+    select, button { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:#0c0c0e; color:var(--fg); }
+    button.primary { background:var(--accent); color:#041; border:0; font-weight:700; }
+    button.hot { background:var(--red); color:#fff; border:0; }
+    #log { font-size:13px; line-height:1.45; max-height:280px; overflow:auto; white-space:pre-wrap; }
+    .u { color:#7dd3fc; } .a { color:#86efac; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p><a href="index.html">← Stack</a></p>
+    <h1>Voice → Voice agent</h1>
+    <p style="color:var(--muted)">Hear you → route with personality → speak back. Plug an LLM via <code>setBrain</code>.</p>
+    <div class="card">
+      <label>Personality
+        <select id="pers"></select>
+      </label>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="primary" id="mic">🎙 Start</button>
+        <button type="button" id="greet">Greet</button>
+      </div>
+      <div id="log" style="margin-top:16px"></div>
+    </div>
+  </div>
+  <script src="src/stt.js"></script>
+  <script src="src/tts.js"></script>
+  <script src="src/personalities.js"></script>
+  <script src="src/business.js"></script>
+  <script src="src/agent.js"></script>
+  <script>
+    const log = document.getElementById('log');
+    const pers = document.getElementById('pers');
+    PocketVoicePersonalities.list().forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id; o.textContent = p.name + ' — ' + p.style;
+      pers.appendChild(o);
+    });
+    function line(who, t) {
+      log.innerHTML += '<div class="'+who+'"><b>'+who+'</b>: '+t+'</div>';
+      log.scrollTop = log.scrollHeight;
+    }
+    const agent = PocketVoiceAgent.create({
+      personality: 'support',
+      businessMode: 'customer_service',
+      onTranscript: (t, who) => line(who === 'user' ? 'u' : 'a', t),
+      onMicState: (on) => {
+        const b = document.getElementById('mic');
+        b.className = on ? 'hot' : 'primary';
+        b.textContent = on ? '🎙 Listening…' : '🎙 Start';
+      },
+    });
+    pers.onchange = () => agent.setPersonality(pers.value);
+    document.getElementById('mic').onclick = () => agent.toggle();
+    document.getElementById('greet').onclick = () => agent.greet();
+  </script>
+</body>
+</html>

@@ -3,61 +3,62 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Pocket Voice-to-Text</title>
+  <title>Pocket Voice Stack — Voice to Text</title>
   <style>
     :root { --bg:#09090b; --panel:#141416; --line:rgba(255,255,255,.1); --fg:#fafafa; --muted:#a1a1aa; --accent:#10a37f; --red:#f87171; }
     * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; font-family:ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--fg);
-      display:flex; align-items:center; justify-content:center; padding:24px; }
-    .card { width:min(520px,100%); background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px; }
-    h1 { margin:0 0 6px; font-size:1.35rem; letter-spacing:-.03em; }
-    p { margin:0 0 16px; color:var(--muted); font-size:14px; line-height:1.5; }
-    textarea { width:100%; min-height:140px; border-radius:12px; border:1px solid var(--line); background:#0c0c0e;
-      color:var(--fg); padding:12px; font-size:15px; resize:vertical; }
+    body { margin:0; min-height:100vh; font-family:ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--fg); padding:24px; }
+    .wrap { max-width:720px; margin:0 auto; }
+    h1 { font-size:1.4rem; letter-spacing:-.03em; margin:0 0 8px; }
+    p { color:var(--muted); font-size:14px; line-height:1.5; }
+    nav { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 24px; }
+    nav a { color:var(--accent); font-size:13px; text-decoration:none; border:1px solid var(--line); padding:6px 10px; border-radius:8px; }
+    nav a.on { background:rgba(16,163,127,.12); border-color:rgba(16,163,127,.4); }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; }
+    textarea { width:100%; min-height:140px; border-radius:12px; border:1px solid var(--line); background:#0c0c0e; color:var(--fg); padding:12px; font-size:15px; }
     .row { display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap; }
-    button { border:0; border-radius:10px; padding:11px 16px; font-weight:700; font-size:14px; cursor:pointer; }
-    .mic { background:var(--accent); color:#041; }
-    .mic.hot { background:var(--red); color:#fff; animation: pulse 1.2s infinite; }
-    .ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
+    button { border:0; border-radius:10px; padding:11px 16px; font-weight:700; font-size:14px; cursor:pointer; background:var(--accent); color:#041; }
+    button.hot { background:var(--red); color:#fff; }
+    button.ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
     .status { font-size:12px; color:var(--muted); }
-    @keyframes pulse { 50% { opacity: .75; } }
-    a { color:var(--accent); }
-    code { font-size:12px; background:#0c0c0e; padding:2px 6px; border-radius:6px; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Pocket Voice-to-Text</h1>
-    <p>Open-source mic → text. Continuous listen until you click off. Used in POCKET’s chat composer — available here as a tiny side project.</p>
-    <textarea id="out" placeholder="Click the mic and speak…"></textarea>
-    <div class="row">
-      <button type="button" class="mic" id="mic">🎙 Mic off</button>
-      <button type="button" class="ghost" id="clear">Clear</button>
-      <span class="status" id="status">Ready</span>
+  <div class="wrap">
+    <h1>Pocket Voice Stack</h1>
+    <p>Open-source voice for real products. Side project — main product is <a href="https://github.com/ItsNotAILABS/pocket" style="color:var(--accent)">POCKET</a>.</p>
+    <nav>
+      <a class="on" href="index.html">Voice → Text</a>
+      <a href="demo-voice-agent.html">Voice agent</a>
+      <a href="demo-coding.html">Code + voice</a>
+      <a href="demo-business.html">Business voice</a>
+    </nav>
+    <div class="card">
+      <h2 style="margin:0 0 8px;font-size:1rem">Voice → Text</h2>
+      <p style="margin-top:0">Continuous mic until you click off. Same pattern as POCKET’s 🎙 button.</p>
+      <textarea id="out" placeholder="Click mic and speak…"></textarea>
+      <div class="row">
+        <button type="button" id="mic">🎙 Mic off</button>
+        <button type="button" class="ghost" id="clear">Clear</button>
+        <span class="status" id="status">Ready</span>
+      </div>
     </div>
-    <p style="margin-top:18px;font-size:12px">Requires Chrome, Edge, or Safari · localhost or HTTPS ·
-      <a href="https://github.com/ItsNotAILABS/pocket-voice-to-text">GitHub</a> ·
-      main product: <a href="https://github.com/ItsNotAILABS/pocket">POCKET</a></p>
   </div>
-  <script src="voice-to-text.js"></script>
+  <script src="src/stt.js"></script>
   <script>
     const out = document.getElementById('out');
     const mic = document.getElementById('mic');
     const status = document.getElementById('status');
-    const voice = PocketVoice.create({
+    const voice = PocketVoiceSTT.create({
       onFinal: (t) => { out.value = (out.value ? out.value + ' ' : '') + t; },
-      onInterim: (t) => { status.textContent = 'Hearing: ' + t.slice(0, 40); },
+      onInterim: (t) => { status.textContent = 'Hearing: ' + t.slice(0, 48); },
       onState: (on) => {
         mic.classList.toggle('hot', on);
         mic.textContent = on ? '🎙 Listening…' : '🎙 Mic off';
-        status.textContent = on ? 'Listening (click mic to stop)' : 'Ready';
+        status.textContent = on ? 'Listening' : 'Ready';
       },
-      onError: (code) => {
-        status.textContent = 'Error: ' + code;
-        if (code === 'unsupported') status.textContent = 'Use Chrome, Edge, or Safari';
-      },
+      onError: (c) => { status.textContent = 'Error: ' + c; },
     });
-    if (!voice.available()) status.textContent = 'Web Speech API not available in this browser';
     mic.onclick = () => voice.toggle();
     document.getElementById('clear').onclick = () => { out.value = ''; };
   </script>

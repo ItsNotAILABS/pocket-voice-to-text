@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Code + voice</title>
+  <style>
+    :root { --bg:#09090b; --panel:#141416; --line:rgba(255,255,255,.1); --fg:#fafafa; --muted:#a1a1aa; --accent:#10a37f; --red:#f87171; }
+    body { margin:0; font-family:ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--fg); padding:24px; }
+    .wrap { max-width:900px; margin:0 auto; display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media(max-width:700px){ .wrap { grid-template-columns:1fr; } }
+    a { color:var(--accent); }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; }
+    textarea { width:100%; min-height:220px; font-family:ui-monospace,monospace; font-size:13px;
+      background:#0c0c0e; color:var(--fg); border:1px solid var(--line); border-radius:10px; padding:10px; }
+    button { border:0; border-radius:10px; padding:10px 14px; font-weight:700; background:var(--accent); color:#041; cursor:pointer; }
+    button.hot { background:var(--red); color:#fff; }
+    .status { font-size:12px; color:var(--muted); margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div style="max-width:900px;margin:0 auto 12px;padding:0 24px">
+    <p><a href="index.html">← Stack</a></p>
+    <h1>Voice while coding</h1>
+    <p style="color:var(--muted)">Dictate into the editor. Commands like “run the tests” fire callbacks. Spoken status when jobs finish — same pattern for POCKET + Codex/Grok.</p>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <b>Editor</b>
+      <textarea id="code" placeholder="// Speak to dictate here…"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button type="button" id="mic">🎙 Mic</button>
+        <button type="button" id="job" style="background:transparent;border:1px solid var(--line);color:var(--fg)">Fake job done</button>
+      </div>
+      <div class="status" id="status">Ready</div>
+    </div>
+    <div class="card">
+      <b>Voice commands</b>
+      <ul style="color:var(--muted);font-size:13px;line-height:1.6">
+        <li>“stop listening”</li>
+        <li>“run the tests”</li>
+        <li>“summarize”</li>
+        <li>“search for X”</li>
+        <li>“explain this”</li>
+        <li>Anything else → dictation into the editor</li>
+      </ul>
+      <pre id="cmd" style="font-size:12px;color:#86efac;white-space:pre-wrap"></pre>
+    </div>
+  </div>
+  <script src="src/stt.js"></script>
+  <script src="src/tts.js"></script>
+  <script src="src/coding.js"></script>
+  <script>
+    const code = document.getElementById('code');
+    const status = document.getElementById('status');
+    const cmd = document.getElementById('cmd');
+    const coding = PocketVoiceCoding.create({
+      target: code,
+      speakStatus: true,
+      onCommand: (c, detail) => {
+        cmd.textContent = 'Command: ' + c + '\n' + JSON.stringify(detail.match && detail.match[0]);
+      },
+      onStatus: (m) => { status.textContent = m; },
+      onMicState: (on) => {
+        const b = document.getElementById('mic');
+        b.className = on ? 'hot' : '';
+        b.textContent = on ? '🎙 Listening…' : '🎙 Mic';
+      },
+    });
+    document.getElementById('mic').onclick = () => coding.toggle();
+    document.getElementById('job').onclick = () => coding.announceJob({ ok: true, message: 'Tests passed' });
+  </script>
+</body>
+</html>
