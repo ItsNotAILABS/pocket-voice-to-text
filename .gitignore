@@ -6,3 +6,6 @@ node_modules/
 .idea/
 .vscode/
 coverage/
+
+# OAuth apps lack workflow scope; enable CI after gh auth -s workflow
+.github/workflows/

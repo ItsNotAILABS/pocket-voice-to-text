@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Patient Voice — 1400ms travel agent</title>
+  <style>
+    :root { --bg:#09090b; --panel:#141416; --line:rgba(255,255,255,.1); --fg:#fafafa; --muted:#a1a1aa; --accent:#10a37f; --red:#f87171; }
+    body { margin:0; font-family:ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--fg); padding:24px; }
+    .wrap { max-width:800px; margin:0 auto; }
+    a { color:var(--accent); }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; margin-top:12px; }
+    select, button, input { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:#0c0c0e; color:var(--fg); }
+    button.primary { background:var(--accent); color:#041; border:0; font-weight:700; }
+    button.hot { background:var(--red); color:#fff; border:0; }
+    #log { font-size:13px; line-height:1.5; max-height:280px; overflow:auto; margin-top:12px; }
+    .meta { font-size:12px; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p><a href="index.html">← Stack</a></p>
+    <h1>Patient voice (travel / hospitality)</h1>
+    <p class="meta">1400&nbsp;ms silence · medium barge-in · cross-domain context buffer · semantic incomplete wait (“ummm”, “and…”, mid-digits).</p>
+    <div class="card">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <label>Scenario
+          <select id="scenario">
+            <option value="patient" selected>Patient 1400ms</option>
+            <option value="standard">Standard 650ms</option>
+            <option value="fast_command">Fast 300ms</option>
+            <option value="dictation">Dictation 2000ms</option>
+          </select>
+        </label>
+        <label>Expert
+          <select id="expert">
+            <option value="hotel_host">Hotel Host</option>
+            <option value="airport_guide">Airport Guide</option>
+            <option value="transit_concierge">Transit Concierge</option>
+            <option value="dining_diplomat">Dining Diplomat</option>
+          </select>
+        </label>
+        <button type="button" class="primary" id="mic">🎙 Start patient mic</button>
+      </div>
+      <div class="meta" id="state" style="margin-top:10px">threshold: —</div>
+      <div id="log"></div>
+    </div>
+    <div class="card">
+      <b>Or use sellable API</b>
+      <pre class="meta" style="white-space:pre-wrap">POST http://127.0.0.1:8790/v1/turn
+{ "text":"…", "scenario":"patient", "expert":"hotel_host", "stress":0.5 }
+
+POST /v1/turn/decide
+{ "transcript":"my flight is", "silence_ms":900, "scenario":"patient" }
+→ end:false (semantic incomplete)</pre>
+    </div>
+  </div>
+  <script src="src/stt.js"></script>
+  <script src="src/tts.js"></script>
+  <script src="src/turn-detection.js"></script>
+  <script src="src/stt-patient.js"></script>
+  <script src="src/personalities.js"></script>
+  <script src="src/business.js"></script>
+  <script src="src/agent.js"></script>
+  <script>
+    const log = document.getElementById('log');
+    const stateEl = document.getElementById('state');
+    function line(who, t) {
+      log.innerHTML += '<div><b style="color:'+(who==='you'?'#7dd3fc':'#86efac')+'">'+who+'</b>: '+t+'</div>';
+      log.scrollTop = log.scrollHeight;
+    }
+    const patient = PocketVoicePatientSTT.create({
+      scenario: 'patient',
+      expert: 'hotel_host',
+      stress: 0.4,
+      barge_in: 'medium',
+      onPartial: (t) => { stateEl.textContent = 'hearing: ' + t.slice(0,60) + ' · ' + JSON.stringify(patient.state().threshold_ms) + 'ms'; },
+      onTurn: async (text, meta) => {
+        line('you', text);
+        // Call local API if up, else offline business route via agent inject pattern
+        try {
+          const r = await fetch('http://127.0.0.1:8790/v1/turn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text,
+              scenario: document.getElementById('scenario').value,
+              expert: document.getElementById('expert').value,
+              stress: 0.4,
+              session_id: 'demo-patient',
+            }),
+          });
+          const j = await r.json();
+          if (j.reply) {
+            line('agent', j.reply);
+            const u = new SpeechSynthesisUtterance(j.reply);
+            speechSynthesis.speak(u);
+          }
+          stateEl.textContent = 'threshold ' + (j.listening && j.listening.threshold_ms) + 'ms · ' + (meta.reason || '');
+        } catch (e) {
+          line('agent', '(start npm start for API) ' + text);
+        }
+      },
+      onBargeIn: () => { try { speechSynthesis.cancel(); } catch(_){} },
+      onState: (on) => {
+        const b = document.getElementById('mic');
+        b.className = on ? 'hot' : 'primary';
+        b.textContent = on ? '🎙 Listening patiently…' : '🎙 Start patient mic';
+      },
+    });
+    document.getElementById('mic').onclick = () => {
+      patient.configure({
+        scenario: document.getElementById('scenario').value,
+        expert: document.getElementById('expert').value,
+        stress: 0.4,
+        barge_in: 'medium',
+      });
+      patient.toggle();
+    };
+    document.getElementById('scenario').onchange = () => patient.configure({ scenario: document.getElementById('scenario').value });
+    document.getElementById('expert').onchange = () => patient.configure({ expert: document.getElementById('expert').value });
+  </script>
+</body>
+</html>

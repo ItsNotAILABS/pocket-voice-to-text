@@ -1,175 +1,158 @@
 <p align="center">
-  <img src="assets/logo.svg" width="96" height="96" alt="Pocket Voice logo"/>
+  <img src="assets/logo.svg" width="96" height="96" alt="Pocket Voice"/>
 </p>
 
-<h1 align="center">Pocket Voice</h1>
+<h1 align="center">Pocket Voice API</h1>
 
 <p align="center">
-  <strong>Open-source voice stack for real products</strong><br/>
-  Voice→Text · Text→Voice · Voice agents · Multi-personality · Business CS · Coding+voice · <strong>HTTP API</strong>
-</p>
-
-<p align="center">
-  <a href="https://github.com/ItsNotAILABS/pocket-voice-to-text/actions"><img alt="tests" src="https://img.shields.io/badge/tests-passing-10a37f?style=flat-square"/></a>
-  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/></a>
-  <a href="docs/API.md"><img alt="api" src="https://img.shields.io/badge/API-HTTP%20v1-34d399?style=flat-square"/></a>
-  <a href="https://github.com/ItsNotAILABS/pocket"><img alt="pocket" src="https://img.shields.io/badge/main%20product-POCKET-0a7a5f?style=flat-square"/></a>
+  <strong>Own your voice stack.</strong> Patient listening · semantic turn-taking · multi-personality agents · business CS · coding+voice<br/>
+  Open-source (MIT) alternative to closed $/min voice SaaS.
 </p>
 
 <p align="center">
-  <img src="assets/banner.svg" width="100%" alt="Pocket Voice banner"/>
+  <img alt="version" src="https://img.shields.io/badge/version-1.0.0-10a37f?style=flat-square"/>
+  <img alt="tests" src="https://img.shields.io/badge/tests-passing-34d399?style=flat-square"/>
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
+  <img alt="api" src="https://img.shields.io/badge/API-sellable%20v1-0a7a5f?style=flat-square"/>
 </p>
+
+<p align="center"><img src="assets/banner.svg" width="100%" alt="banner"/></p>
 
 ---
 
-## Why this exists
+## Why not just buy a closed voice API?
 
-Side project from **[POCKET](https://github.com/ItsNotAILABS/pocket)** — reusable so friends (and you) can build voice features without the full host.
+Funded platforms ship great latency and telephony — and **lock you into $/minute**.
 
-| You want | Use |
-|----------|-----|
-| Mic → text in a webpage | `src/stt.js` / demos |
-| Speak replies | `src/tts.js` |
-| Full voice agent | `src/agent.js` + personalities |
-| Customer service / sales / ops | `src/business.js` + **HTTP API** |
-| Talk while coding | `src/coding.js` |
-| Backend for friends | **`npm start`** → `http://127.0.0.1:8790` |
+| | Closed voice SaaS | **Pocket Voice** |
+|--|-------------------|------------------|
+| Price | ~$0.05–0.21/min | **Self-host $0** |
+| Source | Closed | **MIT — fork it** |
+| Turn-taking | Black box | **Patient 1400ms + semantic + stress** |
+| Personas | Prompt glue | Built-in CS / sales / travel experts |
+| Context | Per vendor | **Cross-domain buffer** (hotel ↔ shuttle ↔ airport) |
+| Best for | Instant phone scale | Products you **own** (and can still plug Deepgram/ElevenLabs under) |
+
+We open-sourced this so companies can **mess with real turn-taking** — not just consume a blob.
 
 ---
 
-## 60-second start
+## Patient VAD (the product moat)
+
+| Scenario | Silence | Use |
+|----------|---------|-----|
+| Fast command / sales | 200–400 ms | Snappy |
+| Standard | 500–800 ms | Balanced |
+| **Patient / travel / healthcare** | **1000–1500 ms (default 1400)** | Stressed callers, multi-part answers |
+| Dictation | 2000+ ms | Account numbers, addresses |
+
+**Hybrid end-of-turn**
+
+1. Silence threshold (scenario + stress + active expert)  
+2. Semantic incompleteness → *don't cut* on “ummm…”, trailing “and”, mid-digits  
+3. Optional energy / Silero hook (`energy`, `speech_active`)  
+4. Medium barge-in by default (cancel TTS when user clearly speaks)
+
+```bash
+curl -s localhost:8790/v1/turn/decide -H "Content-Type: application/json" \
+  -d '{"transcript":"my flight is","silence_ms":900,"scenario":"patient"}'
+# → end: false  (semantic_incomplete, threshold ~1400)
+```
+
+---
+
+## Install & sell
 
 ```bash
 git clone https://github.com/ItsNotAILABS/pocket-voice-to-text.git
 cd pocket-voice-to-text
-npm test          # all unit + API tests
-npm start         # HTTP API on :8790
+npm test          # all green
+npm start         # API :8790
+npm run demo      # browser demos
 ```
+
+### API for customers / friends
 
 ```bash
-curl -s http://127.0.0.1:8790/v1/turn -H "Content-Type: application/json" -d "{\"text\":\"I need a refund\"}"
+# Open local
+npm start
+
+# Production-style
+MASTER_KEY=… REQUIRE_API_KEY=1 npm start
+curl -s localhost:8790/v1/keys -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" -d '{"name":"acme","product":"business"}'
 ```
 
-Browser demos:
+Docs: **[docs/API.md](docs/API.md)** · Products: `GET /v1/products`
 
 ```bash
-npm run demo
-# open http://localhost:5173
+curl -s localhost:8790/v1/turn -H "Content-Type: application/json" -d '{
+  "text": "When is hotel check-in?",
+  "scenario": "patient",
+  "expert": "hotel_host",
+  "stress": 0.5,
+  "context": { "hotel": { "check_in": "4:00 pm", "room": "1204" } }
+}'
 ```
 
-| Demo | File |
+---
+
+## Features
+
+- **Voice → text** continuous (browser Web Speech + patient wrapper)  
+- **Voice → voice** agent loop (STT → brain → TTS)  
+- **Personalities** support · sales · reception · coder · executive · founder  
+- **Business modes** customer_service · sales · reception · ops  
+- **Travel experts** Airport Guide · Transit · Hotel Host · Dining  
+- **Cross-domain context buffer** (shuttle times + room + flight)  
+- **Coding + voice** dictate + commands while you work  
+- **HTTP API** keys, rate limits, products, sessions  
+- **Zero npm deps** runtime  
+
+---
+
+## Demos
+
+| Page | What |
 |------|------|
-| Voice → text | [index.html](index.html) |
-| Voice agent + personalities | [demo-voice-agent.html](demo-voice-agent.html) |
-| Code + voice | [demo-coding.html](demo-coding.html) |
-| Business modes | [demo-business.html](demo-business.html) |
-
----
-
-## HTTP API (for friends)
-
-Full docs: **[docs/API.md](docs/API.md)**
-
-```text
-GET  /health
-GET  /v1                 catalog
-GET  /v1/modes           business modes
-GET  /v1/personalities
-GET  /v1/commands        coding voice commands
-POST /v1/session         create session
-POST /v1/turn            { text, session_id?, business_mode? }
-POST /v1/greet
-POST /v1/route           stateless intent match
-POST /v1/coding/parse
-POST /v1/tts/hint
-```
-
-Lock for shared hosts:
-
-```bash
-API_KEY=your-friend-key npm start
-# clients send: X-API-Key: your-friend-key
-```
-
-### Node library
-
-```js
-const PocketVoice = require("./src/node-entry");
-
-const eng = PocketVoice.createEngine({ businessMode: "customer_service" });
-const out = await eng.turn("The app is broken");
-console.log(out.reply);
-// → ask for product/page details…
-```
-
----
-
-## Modules
-
-```
-src/
-  stt.js            continuous speech-to-text (browser)
-  tts.js            text-to-speech + remote hook
-  agent.js          voice agent loop
-  personalities.js  support · sales · coder · executive · founder…
-  business.js       customer_service · sales · reception · ops
-  coding.js         dictate + commands while coding
-  coding-core.js    pure parse (Node + tests)
-  engine.js         server-side turn engine
-  node-entry.js     package main for Node
-  pocket-voice.js   browser facade
-server/
-  api.js            zero-dep HTTP API
-```
+| [index.html](index.html) | STT |
+| [demo-patient.html](demo-patient.html) | **1400ms patient travel mic** |
+| [demo-voice-agent.html](demo-voice-agent.html) | Personalities |
+| [demo-business.html](demo-business.html) | CS / sales |
+| [demo-coding.html](demo-coding.html) | Code + talk |
 
 ---
 
 ## Architecture
 
 ```
-Browser mic ──► STT ──► your UI / POCKET desk
-                   │
-Friends / bots ──► HTTP API ──► Engine (business + personality [+ optional brain])
-                                      │
-                                      └──► reply + tts_hint ──► TTS / speakers
+Browser mic ──► Patient STT (hybrid turn machine)
+                    │
+Friends/apps ──► HTTP API ──► Engine
+                               ├─ business + personality
+                               ├─ context buffer
+                               ├─ optional LLM brain
+                               └─ tts_hint
 ```
 
-- **Browser** owns real-time mic (Web Speech API)  
-- **API** owns sessions, routing, business logic, coding parse  
-- Plug an LLM with `engine.setBrain(async (text, ctx) => reply)` in-process  
-
----
-
-## Personalities & business modes
-
-**Personalities:** support · sales · reception · coder · executive · founder  
-
-**Business:** customer_service · sales · reception · ops  
-
----
-
-## Tests
-
-```bash
-npm test
-```
-
-Unit tests cover business routing, personalities, coding commands, engine turns, HTTP API, and module loads.
+Plug Silero / Deepgram / ElevenLabs **under** this control plane when you need raw model quality. Keep **patience + personas + buffer** as your open core.
 
 ---
 
 ## Use with POCKET
 
-1. Run API next to the host, or `require` `node-entry`  
-2. Desk 🎙 can keep using browser STT; agent replies can call `/v1/turn`  
-3. Main product stays [POCKET](https://github.com/ItsNotAILABS/pocket)  
+Main product: [POCKET](https://github.com/ItsNotAILABS/pocket)
+
+```
+POST pocket:8787/v1/sandbox/voice  →  voice-api:8790/v1/turn
+```
+
+Agents get `voice:api` capability only — no ambient host FS.
 
 ---
 
 ## License
 
-MIT © ItsNotAI Labs — see [LICENSE](LICENSE)
+MIT © ItsNotAI Labs
 
-<p align="center">
-  <sub>Built to ship · ItsNotAI Labs / Medina Tech Labs</sub>
-</p>
+**Ship voice you own.** Customer service · co-working · educators · personas — open source first.

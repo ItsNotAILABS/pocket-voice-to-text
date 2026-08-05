@@ -1,140 +1,154 @@
-# Pocket Voice HTTP API
+# Pocket Voice API — sellable reference
 
-For friends and builders. Zero npm dependencies. Node 18+.
+**Version:** 1.0.0  
+**Default port:** `8790`  
+**Repo:** https://github.com/ItsNotAILABS/pocket-voice-to-text
 
-## Start
+Open-source voice API you **own**. Position against closed SaaS (usage-priced, lock-in): self-host free, patient listening, multi-personality, hospitality context buffer.
+
+---
+
+## Quick start
 
 ```bash
-cd pocket-voice-to-text
 npm start
-# http://127.0.0.1:8790
+# GET http://127.0.0.1:8790/v1
 ```
 
-Optional lock:
+### Sell / lock mode
 
 ```bash
-# Windows PowerShell
-$env:API_KEY="friend-secret"; $env:PORT="8790"; npm start
+# PowerShell
+$env:MASTER_KEY="super-secret-master"
+$env:REQUIRE_API_KEY="1"
+npm start
+
+# Mint a customer key
+curl -s http://127.0.0.1:8790/v1/keys -H "Authorization: Bearer super-secret-master" -H "Content-Type: application/json" -d "{\"name\":\"acme\",\"product\":\"business\"}"
+# → { "api_key": "pv_…", "product": "business", ... }  (show once)
 ```
 
-```bash
-# bash
-API_KEY=friend-secret PORT=8790 npm start
-```
+Customers send:
 
-Send `X-API-Key: friend-secret` or `Authorization: Bearer friend-secret` when `API_KEY` is set.
-
----
-
-## Endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/health` | no | Liveness |
-| GET | `/v1` | no | Catalog + examples |
-| GET | `/v1/modes` | no | Business modes |
-| GET | `/v1/personalities` | no | Personalities |
-| GET | `/v1/commands` | no | Coding voice commands |
-| POST | `/v1/session` | yes* | Create session |
-| POST | `/v1/turn` | yes* | Chat turn (stateful) |
-| POST | `/v1/greet` | yes* | Spoken greeting text |
-| POST | `/v1/route` | yes* | Stateless intent route |
-| POST | `/v1/coding/parse` | yes* | Parse coding utterance |
-| POST | `/v1/tts/hint` | yes* | TTS payload for client |
-| GET | `/v1/session/:id` | yes* | Session state + history |
-| DELETE | `/v1/session/:id` | yes* | Drop session |
-
-\* If `API_KEY` is unset, mutating routes are open (fine for localhost friends).
-
----
-
-## Examples
-
-### One-shot business route
-
-```bash
-curl -s http://127.0.0.1:8790/v1/route ^
-  -H "Content-Type: application/json" ^
-  -d "{\"text\":\"I need a refund\",\"mode\":\"customer_service\"}"
-```
-
-### Session + turn (customer service)
-
-```bash
-curl -s http://127.0.0.1:8790/v1/session -H "Content-Type: application/json" -d "{\"business_mode\":\"sales\"}"
-# → { "session_id": "..." }
-
-curl -s http://127.0.0.1:8790/v1/turn -H "Content-Type: application/json" ^
-  -d "{\"session_id\":\"YOUR_ID\",\"text\":\"How much does it cost?\"}"
-```
-
-### Coding command parse
-
-```bash
-curl -s http://127.0.0.1:8790/v1/coding/parse -H "Content-Type: application/json" ^
-  -d "{\"text\":\"run the tests\"}"
-```
-
-### JavaScript (browser or Node)
-
-```js
-const r = await fetch("http://127.0.0.1:8790/v1/turn", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    // "X-API-Key": "friend-secret",
-  },
-  body: JSON.stringify({
-    text: "hello",
-    business_mode: "customer_service",
-    session_id: "friend-1",
-  }),
-});
-const j = await r.json();
-console.log(j.reply, j.tts_hint);
-// Play j.tts_hint.text with speechSynthesis or your TTS vendor
-```
-
-### Node library (no HTTP)
-
-```js
-const PocketVoice = require("@itsnotailabs/pocket-voice");
-// or: require("./src/node-entry")
-
-const eng = PocketVoice.createEngine({ businessMode: "support" });
-const out = await eng.turn("The app is broken");
-console.log(out.reply);
+```http
+X-API-Key: pv_…
 ```
 
 ---
 
-## Response shape (`/v1/turn`)
+## Products (price cards)
+
+| Product | Monthly | RPM | Use |
+|---------|---------|-----|-----|
+| **free** | $0 self-host | 60 | Dev / open local |
+| **builder** | $29 hosted* | 300 | Indie apps |
+| **business** | $149 hosted* | 2000 | CS / hospitality |
+| **enterprise** | Contact | high | On-prem / SSO |
+
+\*Hosted prices are **your** SaaS cards when you run this API for customers. Self-host remains free under MIT.
+
+`GET /v1/products`
+
+---
+
+## Patient listening (the moat)
+
+| Scenario | Silence | Barge-in |
+|----------|---------|----------|
+| `fast_command` | 300 ms | high |
+| `standard` | 650 ms | medium |
+| `patient` | **1400 ms** | medium |
+| `dictation` | 2000 ms | low |
+
+**Hybrid turn detection**
+
+1. Silence threshold (scenario + stress + expert)  
+2. Semantic incomplete → wait (“ummm”, trailing “and”, mid-digits)  
+3. Optional energy / Silero via `energy` / `speech_active` fields  
+
+```bash
+curl -s localhost:8790/v1/turn/decide -H "Content-Type: application/json" -d "{\"transcript\":\"my flight is\",\"silence_ms\":900,\"scenario\":\"patient\"}"
+# → { "end": false, "reason": "semantic_incomplete", "threshold_ms": 1400, ... }
+```
+
+---
+
+## Core endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Liveness |
+| GET | `/v1` | Catalog |
+| GET | `/v1/products` | Pricing |
+| GET | `/v1/scenarios` | VAD scenarios |
+| GET | `/v1/experts` | Airport / hotel / … |
+| GET | `/v1/modes` | Business modes |
+| GET | `/v1/personalities` | Personalities |
+| POST | `/v1/turn` | Full agent turn + context buffer |
+| POST | `/v1/turn/decide` | End-of-turn only |
+| POST | `/v1/barge-in` | Cancel TTS? |
+| POST | `/v1/listening` | Set scenario/stress/expert |
+| POST | `/v1/context` | Cross-domain buffer put |
+| POST | `/v1/session` | Create session |
+| POST | `/v1/greet` | Greeting |
+| POST | `/v1/route` | Stateless CS route |
+| POST | `/v1/coding/parse` | Coding voice commands |
+| POST | `/v1/keys` | Mint key (master) |
+
+### Turn with hospitality context
 
 ```json
+POST /v1/turn
 {
-  "ok": true,
-  "reply": "…",
-  "matched": true,
-  "source": "business",
-  "mode": "customer_service",
-  "personality": { "id": "support", "name": "Support", "style": "…" },
-  "session_id": "…",
-  "tts_hint": { "text": "…", "rate": 0.95 },
-  "history_len": 2
+  "text": "When is my shuttle?",
+  "session_id": "guest-42",
+  "scenario": "patient",
+  "expert": "transit_concierge",
+  "stress": 0.6,
+  "context": {
+    "transit": { "shuttle_time": "3:30 pm" },
+    "hotel": { "room": "1204", "check_in": "4:00 pm" }
+  }
 }
 ```
 
-Plug `tts_hint` into the browser TTS module (`src/tts.js`) or a paid voice API.
+Response includes `reply`, `listening.threshold_ms`, `context_buffer`, `tts_hint`.
 
 ---
 
-## Production notes
+## vs closed voice SaaS
 
-1. Set `API_KEY` when exposing beyond localhost  
-2. Put behind HTTPS reverse proxy  
-3. Optional: set `brain` only in process (not via public HTTP) for LLM replies  
-4. Browser STT still runs **on the client**; this API is for **routing, agents, sessions**
+| | Closed funded voice APIs | Pocket Voice |
+|--|--------------------------|--------------|
+| Cost | $/minute | Self-host **$0** |
+| Source | Proprietary | **MIT** |
+| Patient VAD | Black box | **Configurable 200–2000ms + semantic** |
+| Personalities | Prompt only | Built-in CS/sales/coder/… |
+| Lock-in | High | Fork & own |
+| Full-duplex telephony | Often included | You add (LiveKit/Twilio) |
+
+Use Pocket Voice as the **control plane** (turns, patience, personas, buffer). Plug Deepgram/ElevenLabs/Silero for raw audio quality when you need it.
 
 ---
 
-**Repo:** https://github.com/ItsNotAILABS/pocket-voice-to-text
+## Node SDK
+
+```js
+const PV = require("@itsnotailabs/pocket-voice"); // or ./src/node-entry
+
+const eng = PV.createEngine({
+  scenario: "patient",
+  expert: "hotel_host",
+  stress: 0.5,
+  businessMode: "customer_service",
+});
+eng.putContext("hotel", "room", "1204");
+const out = await eng.turn("I need help with my room");
+console.log(out.reply, out.listening);
+```
+
+---
+
+## Browser patient mic
+
+See `demo-patient.html` + `src/stt-patient.js` (Web Speech + hybrid turn machine). Feed Silero energy later via `feedEnergy(level, speechActive)`.

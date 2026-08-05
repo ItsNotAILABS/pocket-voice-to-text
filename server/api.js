@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Pocket Voice HTTP API — for friends & builders.
- * Zero deps. Node 18+.
+ * Pocket Voice API v1 — sellable, self-host or cloud.
  *
  *   npm start
- *   PORT=8790 API_KEY=dev npm start
+ *   PORT=8790 npm start
+ *   REQUIRE_API_KEY=1  → mint keys via POST /v1/keys (master) or env MASTER_KEY
  */
 "use strict";
 
@@ -12,22 +12,28 @@ const http = require("http");
 const { URL } = require("url");
 const crypto = require("crypto");
 const PocketVoice = require("../src/node-entry");
+const Keys = require("../src/keys");
 
 const PORT = Number(process.env.PORT || process.env.POCKET_VOICE_PORT || 8790);
-const API_KEY = (process.env.API_KEY || process.env.POCKET_VOICE_API_KEY || "").trim();
 const HOST = process.env.HOST || "0.0.0.0";
+const MASTER_KEY = (process.env.MASTER_KEY || process.env.POCKET_VOICE_MASTER_KEY || "").trim();
+const REQUIRE_API_KEY =
+  process.env.REQUIRE_API_KEY === "1" ||
+  process.env.POCKET_VOICE_REQUIRE_KEY === "1" ||
+  !!MASTER_KEY;
+const LEGACY_API_KEY = (process.env.API_KEY || process.env.POCKET_VOICE_API_KEY || "").trim();
 
-/** session_id -> engine */
 const sessions = new Map();
 
 function json(res, code, obj) {
-  const body = JSON.stringify(obj, null, 0);
+  const body = JSON.stringify(obj);
   res.writeHead(code, {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
     "Cache-Control": "no-store",
+    "X-Pocket-Voice-Version": PocketVoice.version,
   });
   res.end(body);
 }
@@ -58,12 +64,38 @@ function readBody(req) {
   });
 }
 
-function authOk(req) {
-  if (!API_KEY) return true; // open local by default — set API_KEY in prod
+function extractKey(req) {
   const h = req.headers["x-api-key"] || "";
   const auth = req.headers["authorization"] || "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  return h === API_KEY || bearer === API_KEY;
+  if (h) return String(h).trim();
+  if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
+  return "";
+}
+
+function auth(req) {
+  const raw = extractKey(req);
+  // Master key always ok
+  if (MASTER_KEY && raw === MASTER_KEY) {
+    return { ok: true, key: { id: "master", product: "enterprise", rpm: 20000 }, raw, hash: "master" };
+  }
+  // Legacy single env key
+  if (LEGACY_API_KEY && raw === LEGACY_API_KEY) {
+    return { ok: true, key: { id: "legacy", product: "builder", rpm: 300 }, raw, hash: Keys.hashKey(raw) };
+  }
+  // Minted keys
+  if (raw && raw.startsWith("pv_")) {
+    const rec = Keys.verifyKey(raw);
+    if (rec) {
+      const rl = Keys.rateLimit(rec, Keys.hashKey(raw));
+      if (!rl.ok) return { ok: false, error: "rate_limit", ...rl };
+      return { ok: true, key: rec, raw, hash: Keys.hashKey(raw), rate: rl };
+    }
+  }
+  // Open mode for local demos
+  if (!REQUIRE_API_KEY) {
+    return { ok: true, key: { id: "anon", product: "free", rpm: 60 }, raw: "", hash: "anon" };
+  }
+  return { ok: false, error: "unauthorized" };
 }
 
 function getEngine(sessionId, body) {
@@ -74,32 +106,44 @@ function getEngine(sessionId, body) {
       PocketVoice.createEngine({
         businessMode: body.business_mode || body.mode || "customer_service",
         personality: body.personality || undefined,
+        scenario: body.scenario || "patient",
+        stress: body.stress != null ? body.stress : 0.35,
+        expert: body.expert || "hotel_host",
+        barge_in: body.barge_in || "medium",
       })
     );
   }
   const eng = sessions.get(id);
   if (body.business_mode || body.mode) eng.setBusinessMode(body.business_mode || body.mode);
   if (body.personality) eng.setPersonality(body.personality);
+  if (body.scenario || body.stress != null || body.expert || body.barge_in) {
+    eng.configureListening({
+      scenario: body.scenario,
+      stress: body.stress,
+      expert: body.expert,
+      barge_in: body.barge_in,
+    });
+  }
   return { id, eng };
 }
 
 async function handler(req, res) {
-  if (req.method === "OPTIONS") {
-    return json(res, 204, {});
-  }
+  if (req.method === "OPTIONS") return json(res, 204, {});
 
   const u = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const path = u.pathname.replace(/\/+$/, "") || "/";
 
-  // Public
+  // —— Public ——
   if (req.method === "GET" && (path === "/" || path === "/health" || path === "/v1/health")) {
     return json(res, 200, {
       ok: true,
       product: "Pocket Voice API",
       version: PocketVoice.version,
       docs: "/v1",
+      pricing: "/v1/products",
       repo: "https://github.com/ItsNotAILABS/pocket-voice-to-text",
-      auth_required: !!API_KEY,
+      auth_required: REQUIRE_API_KEY,
+      positioning: "Open-source alternative to closed voice SaaS — patient VAD, personalities, self-host free",
     });
   }
 
@@ -107,26 +151,49 @@ async function handler(req, res) {
     return json(res, 200, {
       ok: true,
       version: PocketVoice.version,
+      sell: {
+        products: "/v1/products",
+        mint_key: "POST /v1/keys  (requires MASTER_KEY)",
+        vs_closed_saas: "Self-host free · own your stack · patient listening built-in · MIT",
+      },
       endpoints: {
         "GET /health": "Liveness",
-        "GET /v1": "This catalog",
+        "GET /v1/products": "Pricing tiers (sellable)",
         "GET /v1/modes": "Business modes",
         "GET /v1/personalities": "Personalities",
         "GET /v1/commands": "Coding voice commands",
-        "POST /v1/session": "Create session { business_mode?, personality? }",
-        "POST /v1/turn": "Chat turn { text, session_id?, business_mode?, personality? }",
-        "POST /v1/greet": "Greeting { session_id?, personality? }",
-        "POST /v1/route": "One-shot business route { text, mode? } (stateless)",
-        "POST /v1/coding/parse": "Parse coding utterance { text }",
-        "POST /v1/tts/hint": "TTS payload for browser { text, rate? }",
-        "DELETE /v1/session/:id": "Drop session",
+        "GET /v1/scenarios": "Patient VAD scenarios (200–2000ms)",
+        "GET /v1/experts": "Context experts (airport, hotel, …)",
+        "POST /v1/turn": "Chat turn + context buffer + listening config",
+        "POST /v1/turn/decide": "Hybrid end-of-turn (silence + semantic)",
+        "POST /v1/barge-in": "Barge-in decision",
+        "POST /v1/context": "Put cross-domain buffer fact",
+        "POST /v1/listening": "Configure patient/stress/expert for session",
+        "POST /v1/session": "Create session",
+        "POST /v1/greet": "Greeting",
+        "POST /v1/route": "Stateless business route",
+        "POST /v1/coding/parse": "Coding utterance parse",
+        "POST /v1/tts/hint": "TTS payload",
+        "POST /v1/keys": "Mint API key (master)",
       },
-      auth: API_KEY
-        ? "Send header X-API-Key: <key> or Authorization: Bearer <key>"
-        : "Open (set env API_KEY to lock)",
       examples: {
-        turn: 'curl -s localhost:8790/v1/turn -H "Content-Type: application/json" -d "{\\"text\\":\\"I need a refund\\"}"',
-        route: 'curl -s localhost:8790/v1/route -H "Content-Type: application/json" -d "{\\"text\\":\\"hello\\",\\"mode\\":\\"sales\\"}"',
+        turn:
+          'curl -s localhost:8790/v1/turn -H "Content-Type: application/json" -d "{\\"text\\":\\"I need a refund\\",\\"scenario\\":\\"patient\\"}"',
+        decide:
+          'curl -s localhost:8790/v1/turn/decide -H "Content-Type: application/json" -d "{\\"transcript\\":\\"my flight is\\",\\"silence_ms\\":900,\\"scenario\\":\\"patient\\"}"',
+      },
+    });
+  }
+
+  if (req.method === "GET" && path === "/v1/products") {
+    return json(res, 200, {
+      ok: true,
+      currency: "USD",
+      products: PocketVoice.listProducts(),
+      note: "Self-host free forever. Paid tiers are for hosted SaaS you run — or use as price cards.",
+      compare: {
+        closed_saas: "Usage ~$0.05–0.21/min, lock-in, proprietary full-duplex",
+        pocket_voice: "MIT · self-host $0 · patient 1400ms VAD · fork & extend · optional paid host",
       },
     });
   }
@@ -140,13 +207,41 @@ async function handler(req, res) {
   if (req.method === "GET" && path === "/v1/commands") {
     return json(res, 200, { ok: true, commands: PocketVoice.listCommands() });
   }
+  if (req.method === "GET" && path === "/v1/scenarios") {
+    return json(res, 200, {
+      ok: true,
+      scenarios: PocketVoice.listScenarios(),
+      default: "patient",
+      default_silence_ms: 1400,
+      guidance: "Travel/healthcare: 1000–1500ms. Fast sales: 200–400ms. Dictation: 2000ms+.",
+    });
+  }
+  if (req.method === "GET" && path === "/v1/experts") {
+    return json(res, 200, { ok: true, experts: PocketVoice.listExperts() });
+  }
 
-  // Auth for mutating routes
-  if (!authOk(req)) {
-    return json(res, 401, { ok: false, error: "unauthorized", hint: "X-API-Key or Bearer token" });
+  // —— Auth for write routes ——
+  const a = auth(req);
+  const publicGet = req.method === "GET";
+  if (!publicGet && !a.ok) {
+    return json(res, 401, {
+      ok: false,
+      error: a.error || "unauthorized",
+      hint: "X-API-Key: pv_… or Bearer. Local open mode if REQUIRE_API_KEY unset.",
+    });
   }
 
   try {
+    // Mint key (master only)
+    if (req.method === "POST" && path === "/v1/keys") {
+      const body = await readBody(req);
+      const raw = extractKey(req);
+      if (!MASTER_KEY || raw !== MASTER_KEY) {
+        return json(res, 403, { ok: false, error: "master_key_required", hint: "Set MASTER_KEY env" });
+      }
+      return json(res, 200, Keys.mintKey(body));
+    }
+
     if (req.method === "POST" && path === "/v1/session") {
       const body = await readBody(req);
       const id = body.session_id || crypto.randomBytes(8).toString("hex");
@@ -155,21 +250,82 @@ async function handler(req, res) {
         PocketVoice.createEngine({
           businessMode: body.business_mode || body.mode || "customer_service",
           personality: body.personality,
+          scenario: body.scenario || "patient",
+          stress: body.stress != null ? body.stress : 0.35,
+          expert: body.expert || "hotel_host",
+          barge_in: body.barge_in || "medium",
         })
       );
-      return json(res, 200, {
-        ok: true,
-        session_id: id,
-        state: sessions.get(id).getState(),
-      });
+      if (a.key) Keys.recordUsage(a.key.id, "session");
+      return json(res, 200, { ok: true, session_id: id, state: sessions.get(id).getState() });
     }
 
     if (req.method === "POST" && path === "/v1/turn") {
       const body = await readBody(req);
       const { id, eng } = getEngine(body.session_id, body);
-      const out = await eng.turn(body.text || body.utterance || body.message || "");
+      if (body.context && typeof body.context === "object") {
+        Object.keys(body.context).forEach((domain) => {
+          const bag = body.context[domain];
+          if (bag && typeof bag === "object") {
+            Object.keys(bag).forEach((k) => eng.putContext(domain, k, bag[k]));
+          }
+        });
+      }
+      const out = await eng.turn(body.text || body.utterance || body.message || "", {
+        silence_ms: body.silence_ms,
+        is_final: body.is_final,
+        scenario: body.scenario,
+        stress: body.stress,
+        expert: body.expert,
+        energy: body.energy,
+        speech_active: body.speech_active,
+        require_end: body.require_end,
+      });
       out.session_id = id;
-      return json(res, out.ok ? 200 : 400, out);
+      if (a.key) Keys.recordUsage(a.key.id, "turn");
+      return json(res, out.ok || out.waiting ? 200 : 400, out);
+    }
+
+    if (req.method === "POST" && path === "/v1/turn/decide") {
+      const body = await readBody(req);
+      const d = PocketVoice.shouldEndTurn({
+        transcript: body.transcript || body.text || "",
+        silenceMs: body.silence_ms,
+        isFinal: body.is_final,
+        scenario: body.scenario || "patient",
+        stress: body.stress,
+        expert: body.expert,
+        energy: body.energy,
+        speechActive: body.speech_active,
+        speakingRate: body.speaking_rate,
+      });
+      if (a.key) Keys.recordUsage(a.key.id, "decide");
+      return json(res, 200, { ok: true, ...d });
+    }
+
+    if (req.method === "POST" && path === "/v1/barge-in") {
+      const body = await readBody(req);
+      const d = PocketVoice.shouldBargeIn({
+        sensitivity: body.sensitivity || body.barge_in || "medium",
+        energy: body.energy,
+        speechActive: body.speech_active,
+        interim: body.interim || body.transcript || "",
+      });
+      return json(res, 200, { ok: true, ...d });
+    }
+
+    if (req.method === "POST" && path === "/v1/listening") {
+      const body = await readBody(req);
+      const { id, eng } = getEngine(body.session_id, body);
+      const st = eng.configureListening(body);
+      return json(res, 200, { ok: true, session_id: id, listening: st });
+    }
+
+    if (req.method === "POST" && path === "/v1/context") {
+      const body = await readBody(req);
+      const { id, eng } = getEngine(body.session_id, body);
+      const r = eng.putContext(body.domain || "general", body.key || "note", body.value);
+      return json(res, 200, { ok: true, session_id: id, ...r, prompt: eng.contextPrompt() });
     }
 
     if (req.method === "POST" && path === "/v1/greet") {
@@ -190,8 +346,7 @@ async function handler(req, res) {
 
     if (req.method === "POST" && path === "/v1/coding/parse") {
       const body = await readBody(req);
-      const parsed = PocketVoice.Coding.parseCommand(body.text || "");
-      return json(res, 200, { ok: true, ...parsed });
+      return json(res, 200, { ok: true, ...PocketVoice.Coding.parseCommand(body.text || "") });
     }
 
     if (req.method === "POST" && path === "/v1/tts/hint") {
@@ -200,12 +355,7 @@ async function handler(req, res) {
       if (!text) return json(res, 400, { ok: false, error: "empty_text" });
       return json(res, 200, {
         ok: true,
-        tts_hint: {
-          text,
-          rate: Number(body.rate) || 1,
-          lang: body.lang || "en-US",
-          note: "Play with browser speechSynthesis or your TTS provider",
-        },
+        tts_hint: { text, rate: Number(body.rate) || 1, lang: body.lang || "en-US" },
       });
     }
 
@@ -219,7 +369,12 @@ async function handler(req, res) {
       const id = path.slice("/v1/session/".length);
       const eng = sessions.get(id);
       if (!eng) return json(res, 404, { ok: false, error: "session_not_found" });
-      return json(res, 200, { ok: true, session_id: id, state: eng.getState(), history: eng.history() });
+      return json(res, 200, {
+        ok: true,
+        session_id: id,
+        state: eng.getState(),
+        history: eng.history(),
+      });
     }
 
     return json(res, 404, { ok: false, error: "not_found", catalog: "/v1" });
@@ -233,13 +388,15 @@ function main() {
     handler(req, res).catch((e) => json(res, 500, { ok: false, error: String(e.message || e) }));
   });
   server.listen(PORT, HOST, () => {
-    console.log(`[pocket-voice-api] http://127.0.0.1:${PORT}`);
+    console.log(`[pocket-voice-api] v${PocketVoice.version}  http://127.0.0.1:${PORT}`);
     console.log(`[pocket-voice-api] catalog  GET /v1`);
-    console.log(`[pocket-voice-api] health   GET /health`);
-    console.log(`[pocket-voice-api] auth     ${API_KEY ? "API_KEY required" : "open (set API_KEY to lock)"}`);
+    console.log(`[pocket-voice-api] products GET /v1/products`);
+    console.log(`[pocket-voice-api] patient  1400ms default · POST /v1/turn/decide`);
+    console.log(
+      `[pocket-voice-api] auth     ${REQUIRE_API_KEY ? "API keys required" : "open local (set REQUIRE_API_KEY=1 to sell)"}`
+    );
   });
 }
 
 if (require.main === module) main();
-
 module.exports = { handler, main, sessions };

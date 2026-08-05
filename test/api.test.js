@@ -133,4 +133,52 @@ describe("HTTP API", () => {
     const r = await request(server, "GET", "/nope");
     assert.equal(r.status, 404);
   });
+
+  it("GET /v1/products", async () => {
+    const r = await request(server, "GET", "/v1/products");
+    assert.equal(r.status, 200);
+    assert.ok(r.json.products.length >= 3);
+  });
+
+  it("GET /v1/scenarios patient 1400", async () => {
+    const r = await request(server, "GET", "/v1/scenarios");
+    assert.equal(r.status, 200);
+    assert.equal(r.json.default_silence_ms, 1400);
+  });
+
+  it("POST /v1/turn/decide incomplete", async () => {
+    const r = await request(server, "POST", "/v1/turn/decide", {
+      transcript: "my flight is",
+      silence_ms: 900,
+      scenario: "patient",
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.end, false);
+  });
+
+  it("POST /v1/context + turn uses buffer", async () => {
+    const s = await request(server, "POST", "/v1/session", { scenario: "patient", expert: "hotel_host" });
+    const id = s.json.session_id;
+    await request(server, "POST", "/v1/context", {
+      session_id: id,
+      domain: "hotel",
+      key: "check_in",
+      value: "4:00 pm",
+    });
+    const t = await request(server, "POST", "/v1/turn", {
+      session_id: id,
+      text: "What time is hotel check-in?",
+    });
+    assert.equal(t.status, 200);
+    assert.ok(t.json.ok);
+  });
+
+  it("POST /v1/barge-in", async () => {
+    const r = await request(server, "POST", "/v1/barge-in", {
+      sensitivity: "medium",
+      interim: "wait please",
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.barge, true);
+  });
 });

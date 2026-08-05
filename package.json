@@ -1,13 +1,14 @@
 {
   "name": "@itsnotailabs/pocket-voice",
-  "version": "0.3.0",
-  "description": "Pocket Voice Stack — STT, TTS, voice agents, multi-personality, business modes, coding+voice. Open API for builders.",
+  "version": "1.0.0",
+  "description": "Sellable open-source voice API: patient VAD (1400ms), semantic turn detection, multi-personality agents, business CS, coding+voice. Own your stack vs closed SaaS.",
   "main": "src/node-entry.js",
   "exports": {
     ".": "./src/node-entry.js",
     "./business": "./src/business.js",
     "./personalities": "./src/personalities.js",
-    "./coding": "./src/coding.js"
+    "./turn": "./src/turn-detection.js",
+    "./coding": "./src/coding-core.js"
   },
   "bin": {
     "pocket-voice-api": "./server/cli.js"
@@ -20,12 +21,15 @@
     "demo": "npx --yes serve . -p 5173"
   },
   "keywords": [
-    "voice",
+    "voice-api",
+    "vad",
+    "patient-listening",
     "speech-to-text",
     "text-to-speech",
     "voice-agent",
     "customer-service",
-    "web-speech",
+    "realtime",
+    "open-source",
     "pocket"
   ],
   "author": "ItsNotAI Labs",
