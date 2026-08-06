@@ -84,8 +84,9 @@ curl -s localhost:8790/v1/turn/decide -H "Content-Type: application/json" -d "{\
 | GET | `/v1/experts` | Airport / hotel / … |
 | GET | `/v1/modes` | Business modes |
 | GET | `/v1/personalities` | Personalities |
-| POST | `/v1/turn` | Full agent turn + context buffer |
-| POST | `/v1/turn/decide` | End-of-turn only |
+| POST | `/v1/turn` | Full agent turn + context buffer + `fusion` metadata |
+| POST | `/v1/turn/decide` | End-of-turn only (+ optional `fusion` vector) |
+| POST | `/v1/fusion/metadata` | Build conversational Fusion input vector (emit only; Deep Fusion in POCKET) |
 | POST | `/v1/barge-in` | Cancel TTS? |
 | POST | `/v1/listening` | Set scenario/stress/expert |
 | POST | `/v1/context` | Cross-domain buffer put |

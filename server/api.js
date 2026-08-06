@@ -114,8 +114,14 @@ function getEngine(sessionId, body) {
     );
   }
   const eng = sessions.get(id);
+  // Business mode first (may set default personality), then explicit persona wins
   if (body.business_mode || body.mode) eng.setBusinessMode(body.business_mode || body.mode);
-  if (body.personality) eng.setPersonality(body.personality);
+  if (body.personality) {
+    eng.setPersonality(body.personality);
+  } else {
+    const pn = String(body.persona || body.persona_name || "").toLowerCase();
+    if (pn.includes("aria")) eng.setPersonality("aria");
+  }
   if (body.scenario || body.stress != null || body.expert || body.barge_in) {
     eng.configureListening({
       scenario: body.scenario,
@@ -164,8 +170,13 @@ async function handler(req, res) {
         "GET /v1/commands": "Coding voice commands",
         "GET /v1/scenarios": "Patient VAD scenarios (200–2000ms)",
         "GET /v1/experts": "Context experts (airport, hotel, …)",
-        "POST /v1/turn": "Chat turn + context buffer + listening config",
+        "POST /v1/turn": "Chat turn + context buffer + fusion + agentic flows",
         "POST /v1/turn/decide": "Hybrid end-of-turn (silence + semantic)",
+        "POST /v1/fusion/metadata": "Build conversational Fusion input vector (no industry Deep Fusion)",
+        "GET /v1/flows": "Agentic multi-step voice flows",
+        "POST /v1/flows/advance": "Advance / match agentic flow",
+        "GET /v1/stt/engines": "Own STT engines (hybrid · pocket · webspeech)",
+        "POST /v1/stt/transcribe": "Own STT scaffold",
         "POST /v1/barge-in": "Barge-in decision",
         "POST /v1/context": "Put cross-domain buffer fact",
         "POST /v1/listening": "Configure patient/stress/expert for session",
@@ -175,6 +186,17 @@ async function handler(req, res) {
         "POST /v1/coding/parse": "Coding utterance parse",
         "POST /v1/tts/hint": "TTS payload",
         "POST /v1/keys": "Mint API key (master)",
+      },
+      stt: {
+        schema: PocketVoice.STT_SCHEMA || "pocket.stt.v1",
+        engines: PocketVoice.STT_ENGINES || ["hybrid", "pocket", "webspeech"],
+        own_stack: true,
+      },
+      agentic_flows: true,
+      fusion: {
+        schema: PocketVoice.FUSION_SCHEMA || "pocket.voice.fusion_metadata.v1",
+        version: PocketVoice.FUSION_VERSION || "1.0",
+        note: "Public stack emits metadata only. Industry Deep Fusion lives in POCKET host.",
       },
       examples: {
         turn:
@@ -218,6 +240,22 @@ async function handler(req, res) {
   }
   if (req.method === "GET" && path === "/v1/experts") {
     return json(res, 200, { ok: true, experts: PocketVoice.listExperts() });
+  }
+  if (req.method === "GET" && path === "/v1/flows") {
+    return json(res, 200, {
+      ok: true,
+      flows: PocketVoice.listFlows ? PocketVoice.listFlows() : [],
+      version: PocketVoice.version,
+    });
+  }
+  if (req.method === "GET" && path === "/v1/stt/engines") {
+    return json(res, 200, {
+      ok: true,
+      schema: PocketVoice.STT_SCHEMA || "pocket.stt.v1",
+      engines: PocketVoice.STT_ENGINES || ["hybrid", "pocket", "webspeech"],
+      own_stack: true,
+      default: "hybrid",
+    });
   }
 
   // —— Auth for write routes ——
@@ -288,8 +326,9 @@ async function handler(req, res) {
 
     if (req.method === "POST" && path === "/v1/turn/decide") {
       const body = await readBody(req);
+      const transcript = body.transcript || body.text || "";
       const d = PocketVoice.shouldEndTurn({
-        transcript: body.transcript || body.text || "",
+        transcript,
         silenceMs: body.silence_ms,
         isFinal: body.is_final,
         scenario: body.scenario || "patient",
@@ -299,8 +338,100 @@ async function handler(req, res) {
         speechActive: body.speech_active,
         speakingRate: body.speaking_rate,
       });
+      let fusion = null;
+      try {
+        if (body.session_id && sessions.has(body.session_id)) {
+          fusion = sessions.get(body.session_id).getFusionMetadata({
+            transcript,
+            decision: d,
+            is_final: body.is_final,
+            stress: body.stress,
+            expert: body.expert,
+            scenario: body.scenario,
+            energy: body.energy,
+            speaking_rate: body.speaking_rate,
+            session_id: body.session_id,
+          });
+        } else if (PocketVoice.buildFusionMetadata) {
+          fusion = PocketVoice.buildFusionMetadata({
+            transcript,
+            decision: d,
+            is_final: body.is_final,
+            stress: body.stress,
+            expert: body.expert || "hotel_host",
+            scenario: body.scenario || "patient",
+            energy: body.energy,
+            silence_ms: body.silence_ms,
+            speaking_rate: body.speaking_rate,
+            speechActive: body.speech_active,
+            incomplete: d.incomplete,
+            complete: d.complete,
+            context_buffer: body.context || body.context_buffer,
+            session_id: body.session_id,
+          });
+        }
+      } catch (_) {
+        fusion = null;
+      }
       if (a.key) Keys.recordUsage(a.key.id, "decide");
-      return json(res, 200, { ok: true, ...d });
+      return json(res, 200, { ok: true, ...d, fusion });
+    }
+
+    if (req.method === "POST" && path === "/v1/flows/advance") {
+      const body = await readBody(req);
+      const text = body.text || body.utterance || body.transcript || "";
+      const state = body.state || body.flow_state || {};
+      if (body.flow_id) state.flow_id = body.flow_id;
+      const out = PocketVoice.advanceFlow
+        ? PocketVoice.advanceFlow(state, text)
+        : { ok: false, error: "flows_unavailable" };
+      return json(res, 200, { ok: true, ...out, text });
+    }
+
+    if (req.method === "POST" && path === "/v1/stt/transcribe") {
+      const body = await readBody(req);
+      // Own STT scaffold: accept client transcript + energy; optional host does heavy ASR
+      const text = String(body.text || body.transcript || "").trim();
+      return json(res, 200, {
+        ok: true,
+        schema: "pocket.stt.v1",
+        engine: body.engine || "hybrid",
+        text: text,
+        is_final: body.is_final !== false,
+        energy: body.energy,
+        speech_active: body.speech_active,
+        note: text
+          ? "Transcript accepted on own stack"
+          : "Provide text from hybrid/webspeech, or wire host Whisper at POCKET /v1/voice/stt",
+        host_stt_hint: "POST POCKET /v1/voice/stt with audio when local ASR is installed",
+      });
+    }
+
+    if (req.method === "POST" && path === "/v1/fusion/metadata") {
+      const body = await readBody(req);
+      const { id, eng } = getEngine(body.session_id, body);
+      if (body.context && typeof body.context === "object") {
+        Object.keys(body.context).forEach((domain) => {
+          const bag = body.context[domain];
+          if (bag && typeof bag === "object") {
+            Object.keys(bag).forEach((k) => eng.putContext(domain, k, bag[k]));
+          }
+        });
+      }
+      const meta = eng.getFusionMetadata({
+        transcript: body.transcript || body.text || "",
+        is_final: body.is_final,
+        stress: body.stress,
+        expert: body.expert,
+        scenario: body.scenario,
+        energy: body.energy,
+        speaking_rate: body.speaking_rate,
+        silence_ms: body.silence_ms,
+        session_id: id,
+        industry: body.industry || "dfw_airline_hospitality",
+        history_length: body.history_length,
+      });
+      return json(res, 200, { ok: true, session_id: id, fusion: meta });
     }
 
     if (req.method === "POST" && path === "/v1/barge-in") {

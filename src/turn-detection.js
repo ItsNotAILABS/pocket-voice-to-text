@@ -328,6 +328,257 @@ function createContextBuffer(opts) {
   return { put, get, snapshot, toPromptBlock, clear, experts: DOMAIN_EXPERTS };
 }
 
+/** Lightweight entity harvest for fusion metadata (no heavy NLP). */
+const ENTITY_PATTERNS = [
+  { type: "flight", re: /\b(?:flight\s*)?([A-Z]{1,3}\s?\d{2,5})\b/i },
+  { type: "flight_status", re: /\b(delayed|cancelled|canceled|boarding|on time|diverted|missed connection)\b/i },
+  { type: "gate", re: /\bgate\s*([A-Z]?\d{1,3}[A-Z]?)\b/i },
+  { type: "room", re: /\broom\s*(?:#|number|is|no\.?)?\s*(\d{2,5})\b/i },
+  { type: "hotel", re: /\b(hotel|marriott|hilton|hyatt|westin|sheraton|courtyard|residence inn)\b/i },
+  { type: "check_in", re: /\bcheck[- ]?in\b/i },
+  { type: "shuttle", re: /\b(shuttle|rideshare|uber|lyft|taxi|skytrain|dart)\b/i },
+  { type: "dining", re: /\b(restaurant|dining|food|eat|hungry|reservation)\b/i },
+  { type: "bag", re: /\b(bag|baggage|luggage|claim)\b/i },
+  { type: "need", re: /\b(?:need|want|looking for)\s+(?:a\s+|the\s+)?([a-z][a-z\s]{2,24})/i },
+  { type: "confirmation", re: /\b(?:conf(?:irmation)?|pnr|record locator)\s*(?:#|is|:)?\s*([A-Z0-9]{5,8})\b/i },
+  { type: "airport_code", re: /\b(DFW|DAL|AA|American Airlines|Terminal\s*[A-E])\b/i },
+];
+
+function extractEntities(text) {
+  const t = String(text || "");
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < ENTITY_PATTERNS.length; i++) {
+    const p = ENTITY_PATTERNS[i];
+    const m = t.match(p.re);
+    if (m) {
+      const value = (m[1] || m[0] || "").toString().trim();
+      const key = p.type + ":" + value.toLowerCase();
+      if (value && !seen[key]) {
+        seen[key] = true;
+        out.push({ type: p.type, value: value.slice(0, 64) });
+      }
+    }
+  }
+  return out;
+}
+
+function trailingCues(text) {
+  const t = String(text || "").trim();
+  const cues = [];
+  for (let i = 0; i < TRAILING_INCOMPLETE.length; i++) {
+    if (TRAILING_INCOMPLETE[i].test(t)) {
+      const m = t.match(TRAILING_INCOMPLETE[i]);
+      if (m) cues.push(String(m[0] || m[1] || "incomplete").trim().slice(0, 24));
+    }
+  }
+  return cues.slice(0, 4);
+}
+
+function entityDensity(text, entities) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean).length || 1;
+  const n = (entities && entities.length) || 0;
+  return Math.max(0, Math.min(1, n / Math.max(3, words * 0.35)));
+}
+
+function pausePatternFrom(silenceMs, speechActive, incomplete) {
+  if (speechActive) return "active";
+  const s = Number(silenceMs) || 0;
+  if (incomplete && s > 700) return "long_thinking";
+  if (s > 1400) return "long_thinking";
+  if (s > 500) return "normal";
+  if (s > 0 && s < 250) return "short";
+  if (incomplete) return "fragmented";
+  return "normal";
+}
+
+function flattenContextBuffer(snapshot) {
+  const snap = snapshot || {};
+  const out = {};
+  Object.keys(snap).forEach((domain) => {
+    const list = snap[domain] || [];
+    const bag = {};
+    list.forEach((e) => {
+      if (e && e.key != null) bag[e.key] = e.value;
+    });
+    out[domain] = bag;
+  });
+  return out;
+}
+
+function guessCandidateExperts(text, activeExpert, entities) {
+  const t = String(text || "").toLowerCase();
+  const scores = {
+    airport_guide: 0,
+    hotel_host: 0,
+    transit_concierge: 0,
+    dining_diplomat: 0,
+    support: 0,
+  };
+  if (/flight|gate|delay|baggage|terminal|dfw|boarding|connection/.test(t)) scores.airport_guide += 2;
+  if (/hotel|room|check[- ]?in|reservation|stay|hold my room/.test(t)) scores.hotel_host += 2;
+  if (/shuttle|rideshare|uber|lyft|taxi|transit|train/.test(t)) scores.transit_concierge += 2;
+  if (/restaurant|dining|eat|food|hungry|menu/.test(t)) scores.dining_diplomat += 2;
+  if (/refund|cancel|bill|charge|support|agent/.test(t)) scores.support += 1.5;
+  (entities || []).forEach((e) => {
+    if (e.type === "flight" || e.type === "flight_status" || e.type === "gate" || e.type === "bag") scores.airport_guide += 1.2;
+    if (e.type === "room" || e.type === "hotel" || e.type === "check_in") scores.hotel_host += 1.2;
+    if (e.type === "shuttle") scores.transit_concierge += 1.2;
+    if (e.type === "dining") scores.dining_diplomat += 1.2;
+  });
+  if (activeExpert && scores[activeExpert] != null) scores[activeExpert] += 0.4;
+  return Object.keys(scores)
+    .map((id) => ({ id, score: scores[id] }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .map((x) => x.id);
+}
+
+function dominantDomainFromBuffer(snapshot, activeExpert) {
+  const flat = flattenContextBuffer(snapshot);
+  const order = ["airport", "hotel", "transit", "dining", "support"];
+  let best = (DOMAIN_EXPERTS[activeExpert] && DOMAIN_EXPERTS[activeExpert].domain) || "general";
+  let bestN = -1;
+  order.forEach((d) => {
+    const n = flat[d] ? Object.keys(flat[d]).length : 0;
+    if (n > bestN) {
+      bestN = n;
+      best = d;
+    }
+  });
+  return best;
+}
+
+function userStateFrom(stress, entities, text) {
+  const s = Math.max(0, Math.min(1, Number(stress) || 0));
+  const t = String(text || "").toLowerCase();
+  if (s >= 0.55 || /delayed|missed|urgent|asap|frustrated|angry/.test(t)) return "stressed_traveler";
+  if (/tired|exhausted|long day|late night/.test(t)) return "fatigued_traveler";
+  if ((entities || []).some((e) => e.type === "flight_status" && /delay/i.test(e.value))) return "disrupted_passenger";
+  if (s < 0.25) return "calm_guest";
+  return "active_guest";
+}
+
+/**
+ * Conversational Fusion input vector (v1.0).
+ * Emitted by the public voice stack; industry Deep Fusion lives in POCKET host.
+ */
+function buildFusionMetadata(input) {
+  input = input || {};
+  const transcript = String(input.transcript || input.text || "");
+  const entities = input.entities || extractEntities(transcript);
+  const incomplete = input.incomplete != null ? !!input.incomplete : isLinguisticallyIncomplete(transcript);
+  const complete = input.complete != null ? !!input.complete : isLinguisticallyComplete(transcript);
+  const stress = Math.max(0, Math.min(1, Number(input.stress != null ? input.stress : 0.35)));
+  const energy = typeof input.energy === "number" ? input.energy : 0;
+  const speechActive = input.speechActive === true;
+  const silenceMs = Number(input.silence_ms != null ? input.silence_ms : input.silenceMs) || 0;
+  const speakingRate =
+    typeof input.speaking_rate === "number"
+      ? input.speaking_rate
+      : typeof input.speakingRate === "number"
+        ? input.speakingRate
+        : 0.85;
+  const scenario = input.scenario || "patient";
+  const expert = input.expert || "hotel_host";
+  const decision = input.decision || input.turn || null;
+  const threshold =
+    (decision && decision.threshold_ms) ||
+    adjustSilenceMs((SCENARIOS[scenario] || SCENARIOS.patient).silence_ms, {
+      stress,
+      expert,
+      speakingRate,
+    });
+  const candidates = guessCandidateExperts(transcript, expert, entities);
+  const conf =
+    candidates[0] === expert
+      ? 0.72
+      : candidates.length
+        ? 0.55 + Math.min(0.3, (entities.length || 0) * 0.06)
+        : 0.4;
+  const contextSnap = input.context_buffer || input.context || {};
+  const flatCtx = (function normalizeCtx(snap) {
+    const keys = Object.keys(snap || {});
+    if (!keys.length) return {};
+    const sample = snap[keys[0]];
+    if (Array.isArray(sample)) return flattenContextBuffer(snap);
+    // already flat { domain: { key: val } }
+    if (sample && typeof sample === "object") {
+      const out = {};
+      keys.forEach((d) => {
+        out[d] = snap[d] && typeof snap[d] === "object" && !Array.isArray(snap[d]) ? snap[d] : {};
+      });
+      return out;
+    }
+    return flattenContextBuffer(snap);
+  })(contextSnap);
+
+  return {
+    version: "1.0",
+    schema: "pocket.voice.fusion_metadata.v1",
+    session_id: input.session_id || input.sessionId || null,
+    timestamp: Math.floor(Date.now() / 1000),
+    turn_id: input.turn_id || input.turnId || "t_" + Date.now().toString(36),
+    acoustic: {
+      stress: Math.round(stress * 1000) / 1000,
+      speaking_rate: Math.round(speakingRate * 1000) / 1000,
+      energy_mean: Math.round(energy * 1000) / 1000,
+      energy_var: typeof input.energy_var === "number" ? input.energy_var : Math.round(energy * 0.25 * 1000) / 1000,
+      pause_pattern: pausePatternFrom(silenceMs, speechActive, incomplete),
+      speech_active_ratio:
+        typeof input.speech_active_ratio === "number"
+          ? input.speech_active_ratio
+          : speechActive
+            ? 0.7
+            : silenceMs > 400
+              ? 0.25
+              : 0.5,
+    },
+    linguistic: {
+      transcript: transcript.slice(0, 2000),
+      is_final: input.is_final !== false && input.isFinal !== false,
+      incomplete,
+      complete,
+      reason: (decision && decision.reason) || (incomplete ? "semantic_incomplete" : complete ? "complete" : "waiting"),
+      entity_density: Math.round(entityDensity(transcript, entities) * 1000) / 1000,
+      entities,
+      trailing_cues: trailingCues(transcript),
+    },
+    turn: {
+      scenario,
+      threshold_ms: threshold,
+      silence_ms: silenceMs,
+      decision: decision ? (decision.end ? "end" : "waiting") : silenceMs >= threshold ? "end" : "waiting",
+      barge_in_sensitivity: input.barge_in || input.sensitivity || "medium",
+      end: decision ? !!decision.end : null,
+      decide_reason: decision ? decision.reason : null,
+    },
+    domain: {
+      active_expert: expert,
+      candidate_experts: candidates.length ? candidates : [expert],
+      confidence: Math.round(conf * 1000) / 1000,
+      industry: input.industry || "dfw_airline_hospitality",
+    },
+    context_buffer: flatCtx,
+    session: {
+      history_length: Number(input.history_length) || Number(input.historyLength) || 0,
+      dominant_domain: dominantDomainFromBuffer(
+        // rebuild list shape for dominantDomain if needed
+        (function () {
+          const out = {};
+          Object.keys(flatCtx).forEach((d) => {
+            out[d] = Object.keys(flatCtx[d] || {}).map((k) => ({ key: k, value: flatCtx[d][k] }));
+          });
+          return out;
+        })(),
+        expert
+      ),
+      user_state: userStateFrom(stress, entities, transcript),
+    },
+  };
+}
+
 /**
  * Stateful turn machine for one session.
  */
@@ -341,6 +592,9 @@ function createTurnMachine(opts) {
   let transcript = "";
   let speechActive = false;
   let energy = 0;
+  let energySamples = [];
+  let turnCounter = 0;
+  let sessionId = opts.session_id || opts.sessionId || null;
   const buffer = createContextBuffer(opts.buffer);
 
   function configure(cfg) {
@@ -349,12 +603,17 @@ function createTurnMachine(opts) {
     if (cfg.stress != null) stress = cfg.stress;
     if (cfg.expert) expert = cfg.expert;
     if (cfg.barge_in) sensitivity = cfg.barge_in;
+    if (cfg.session_id) sessionId = cfg.session_id;
     return state();
   }
 
   function onAudio(frame) {
     frame = frame || {};
-    if (typeof frame.energy === "number") energy = frame.energy;
+    if (typeof frame.energy === "number") {
+      energy = frame.energy;
+      energySamples.push(energy);
+      if (energySamples.length > 40) energySamples.shift();
+    }
     if (typeof frame.speechActive === "boolean") speechActive = frame.speechActive;
     else if (energy > 0.35) speechActive = true;
     else if (energy < 0.15) speechActive = false;
@@ -396,6 +655,42 @@ function createTurnMachine(opts) {
     });
   }
 
+  function energyStats() {
+    if (!energySamples.length) return { mean: energy, variance: 0 };
+    const mean = energySamples.reduce((a, b) => a + b, 0) / energySamples.length;
+    const variance =
+      energySamples.reduce((a, b) => a + (b - mean) * (b - mean), 0) / energySamples.length;
+    return { mean, variance };
+  }
+
+  function getFusionMetadata(extra) {
+    extra = extra || {};
+    const decision = extra.decision || decide(extra.is_final || extra.isFinal);
+    const est = energyStats();
+    turnCounter += 1;
+    return buildFusionMetadata({
+      session_id: sessionId || extra.session_id,
+      turn_id: extra.turn_id || "t_" + turnCounter,
+      transcript: extra.transcript != null ? extra.transcript : transcript,
+      is_final: extra.is_final != null ? extra.is_final : extra.isFinal,
+      stress: extra.stress != null ? extra.stress : stress,
+      expert: extra.expert || expert,
+      scenario: extra.scenario || scenario,
+      barge_in: sensitivity,
+      energy: est.mean,
+      energy_var: Math.round(est.variance * 1000) / 1000,
+      speechActive,
+      silence_ms: silenceMs(),
+      speaking_rate: extra.speaking_rate,
+      decision,
+      context_buffer: buffer.snapshot(),
+      history_length: extra.history_length,
+      industry: extra.industry || "dfw_airline_hospitality",
+      incomplete: decision.incomplete,
+      complete: decision.complete,
+    });
+  }
+
   function state() {
     const sc = SCENARIOS[scenario] || SCENARIOS.patient;
     return {
@@ -422,6 +717,7 @@ function createTurnMachine(opts) {
     buffer,
     putContext: buffer.put,
     contextPrompt: buffer.toPromptBlock,
+    getFusionMetadata,
   };
 }
 
@@ -438,6 +734,10 @@ const api = {
   shouldBargeIn,
   createContextBuffer,
   createTurnMachine,
+  extractEntities,
+  buildFusionMetadata,
+  FUSION_SCHEMA: "pocket.voice.fusion_metadata.v1",
+  FUSION_VERSION: "1.0",
 };
 
 if (typeof module === "object" && module.exports) {

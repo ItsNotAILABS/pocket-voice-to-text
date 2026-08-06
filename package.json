@@ -1,14 +1,16 @@
 {
   "name": "@itsnotailabs/pocket-voice",
-  "version": "1.0.0",
-  "description": "Sellable open-source voice API: patient VAD (1400ms), semantic turn detection, multi-personality agents, business CS, coding+voice. Own your stack vs closed SaaS.",
+  "version": "1.1.0",
+  "description": "Own your voice stack: first-party hybrid STT, patient VAD, agentic multi-step flows, fusion metadata, multi-personality agents. MIT.",
   "main": "src/node-entry.js",
   "exports": {
     ".": "./src/node-entry.js",
     "./business": "./src/business.js",
     "./personalities": "./src/personalities.js",
     "./turn": "./src/turn-detection.js",
-    "./coding": "./src/coding-core.js"
+    "./coding": "./src/coding-core.js",
+    "./stt": "./src/stt-pocket.js",
+    "./flows": "./src/agent-flows.js"
   },
   "bin": {
     "pocket-voice-api": "./server/cli.js"

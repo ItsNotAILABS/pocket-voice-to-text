@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.0.0-10a37f?style=flat-square"/>
+  <img alt="version" src="https://img.shields.io/badge/version-1.1.0-10a37f?style=flat-square"/>
   <img alt="tests" src="https://img.shields.io/badge/tests-passing-34d399?style=flat-square"/>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
   <img alt="api" src="https://img.shields.io/badge/API-sellable%20v1-0a7a5f?style=flat-square"/>
@@ -31,6 +31,9 @@ Funded platforms ship great latency and telephony — and **lock you into $/minu
 | Turn-taking | Black box | **Patient 1400ms + semantic + stress** |
 | Personas | Prompt glue | Built-in CS / sales / travel experts |
 | Context | Per vendor | **Cross-domain buffer** (hotel ↔ shuttle ↔ airport) |
+| STT | Vendor ASR | **Own hybrid STT** (energy VAD + Web Speech + optional host Whisper) |
+| Agents | Single prompt | **Agentic multi-step flows** (travel recovery, code pair, …) |
+| Fusion | n/a | **Metadata → POCKET Deep Fusion** |
 | Best for | Instant phone scale | Products you **own** (and can still plug Deepgram/ElevenLabs under) |
 
 We open-sourced this so companies can **mess with real turn-taking** — not just consume a blob.
@@ -60,6 +63,43 @@ curl -s localhost:8790/v1/turn/decide -H "Content-Type: application/json" \
 ```
 
 ---
+
+## Own STT (v1.1)
+
+```js
+// Browser
+const stt = PocketVoiceSTTPocket.create({ engine: "hybrid", hostSttUrl: "http://127.0.0.1:8787" });
+stt.start(); // energy VAD + webspeech; optional host /v1/voice/stt
+```
+
+| Engine | What |
+|--------|------|
+| `hybrid` | **Default** — MediaStream energy + Web Speech |
+| `pocket` | Energy VAD + optional host ASR |
+| `webspeech` | Browser SpeechRecognition only |
+
+API: `GET /v1/stt/engines` · `POST /v1/stt/transcribe`  
+POCKET: `POST /v1/voice/stt` (sovereign host bridge)
+
+## Agentic flows (v1.1)
+
+Multi-step playbooks on the voice stack:
+
+| Flow | When |
+|------|------|
+| `travel_recovery` | Delay · hotel · shuttle · dining |
+| `code_pair` | Voice pair programming |
+| `support_escalate` | CS calm escalate |
+| `morning_brief` | Day priorities |
+| `founder_sanctuary` | Focus / ship |
+
+```bash
+curl -s localhost:8790/v1/flows
+curl -s localhost:8790/v1/flows/advance -H "Content-Type: application/json" \
+  -d '{"text":"my flight is delayed and I need the hotel"}'
+```
+
+Turns return `agentic_flow` + `fusion` metadata for POCKET.
 
 ## Install & sell
 
