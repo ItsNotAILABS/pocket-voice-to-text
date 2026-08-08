@@ -1,7 +1,7 @@
 {
   "name": "@itsnotailabs/pocket-voice",
-  "version": "1.1.0",
-  "description": "Own your voice stack: first-party hybrid STT, patient VAD, agentic multi-step flows, fusion metadata, multi-personality agents. MIT.",
+  "version": "1.2.0",
+  "description": "Own your voice stack: patient VAD, hybrid STT, agentic flows, multi-personality agents, context snapping, and provider-neutral Voice Agent Studio contracts. MIT.",
   "main": "src/node-entry.js",
   "exports": {
     ".": "./src/node-entry.js",
@@ -10,7 +10,8 @@
     "./turn": "./src/turn-detection.js",
     "./coding": "./src/coding-core.js",
     "./stt": "./src/stt-pocket.js",
-    "./flows": "./src/agent-flows.js"
+    "./flows": "./src/agent-flows.js",
+    "./studio": "./src/studio-contract.js"
   },
   "bin": {
     "pocket-voice-api": "./server/cli.js"
@@ -31,6 +32,8 @@
     "voice-agent",
     "customer-service",
     "realtime",
+    "context-snap",
+    "voice-studio",
     "open-source",
     "pocket"
   ],
@@ -54,6 +57,7 @@
     "docs/",
     "voice-to-text.js",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "DEVBOARD.md"
   ]
 }
