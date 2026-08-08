@@ -14,7 +14,7 @@ const Studio = require("./studio-contract");
 const { createEngine } = require("./engine");
 
 module.exports = {
-  version: "1.2.0-dev",
+  version: "1.2.0",
   product: "Pocket Voice",
   Business,
   Personalities,
