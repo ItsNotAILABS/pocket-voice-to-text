@@ -10,13 +10,60 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.1.0-10a37f?style=flat-square"/>
+  <img alt="version" src="https://img.shields.io/badge/version-1.2.0-10a37f?style=flat-square"/>
   <img alt="tests" src="https://img.shields.io/badge/tests-passing-34d399?style=flat-square"/>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
   <img alt="api" src="https://img.shields.io/badge/API-sellable%20v1-0a7a5f?style=flat-square"/>
+  <img alt="saas" src="https://img.shields.io/badge/SaaS-ready-bc8cff?style=flat-square"/>
+</p>
+
+<p align="center">
+  <a href="terminal.html"><img alt="Sovereign Terminal" src="https://img.shields.io/badge/%E2%9A%A1%20Sovereign-Terminal-3fb950?style=for-the-badge&logo=gnometerminal&logoColor=white"/></a>
+  &nbsp;
+  <a href="saas-dashboard.html"><img alt="SaaS Dashboard" src="https://img.shields.io/badge/%F0%9F%93%8A-SaaS%20Dashboard-79c0ff?style=for-the-badge"/></a>
+  &nbsp;
+  <a href="https://railway.app/new/template?template=https://github.com/ItsNotAILABS/pocket-voice-to-text"><img alt="Deploy on Railway" src="https://img.shields.io/badge/Deploy-Railway-0b0d0e?style=for-the-badge&logo=railway&logoColor=white"/></a>
+  &nbsp;
+  <a href="https://render.com/deploy?repo=https://github.com/ItsNotAILABS/pocket-voice-to-text"><img alt="Deploy on Render" src="https://img.shields.io/badge/Deploy-Render-46e3b7?style=for-the-badge&logo=render&logoColor=white"/></a>
 </p>
 
 <p align="center"><img src="assets/banner.svg" width="100%" alt="banner"/></p>
+
+---
+
+## 🚀 Try It Now
+
+```bash
+git clone https://github.com/ItsNotAILABS/pocket-voice-to-text.git
+cd pocket-voice-to-text
+npm start          # API on :8790
+```
+
+Then open **[terminal.html](terminal.html)** in your browser for an interactive shell, or run:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  ⚡  SOVEREIGN TERMINAL  ─  Pocket Voice API                 ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  $ GET /v1                                                   ║
+║  → API catalog, all endpoints, version                       ║
+║                                                              ║
+║  $ POST /v1/turn {"text":"my flight is delayed","scenario":"patient"}
+║  → patient turn + personalities + context buffer             ║
+║                                                              ║
+║  $ POST /v1/turn/decide {"transcript":"my flight is","silence_ms":900}
+║  → end: false  (semantic incomplete, threshold ~1400ms)      ║
+║                                                              ║
+║  $ POST /v1/saas/checkout {"tier":"free","email":"me@co.com"}
+║  → api_key: pv_…  (instant free-tier provisioning)          ║
+║                                                              ║
+║  $ GET /v1/flows                                             ║
+║  → travel_recovery · code_pair · support_escalate · …       ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+> **[→ Open Sovereign Terminal](terminal.html)** — full interactive shell, presets, history, live API
 
 ---
 
@@ -117,9 +164,19 @@ npm run demo      # browser demos
 # Open local
 npm start
 
-# Production-style
-MASTER_KEY=… REQUIRE_API_KEY=1 npm start
-curl -s localhost:8790/v1/keys -H "Authorization: Bearer $MASTER_KEY" \
+# SaaS mode (billing routes, tiers, admin panel)
+SAAS_MODE=1 MASTER_KEY=secret npm run saas
+
+# Production with real Stripe
+SAAS_MODE=1 MASTER_KEY=secret \
+  STRIPE_SECRET_KEY=sk_live_… \
+  STRIPE_WEBHOOK_SECRET=whsec_… \
+  STRIPE_PRICE_PRO=price_… \
+  STRIPE_PRICE_TEAM=price_… \
+  REQUIRE_API_KEY=1 npm run saas
+
+# Mint a key (master only)
+curl -s localhost:8790/v1/keys -H "Authorization: ******" \
   -H "Content-Type: application/json" -d '{"name":"acme","product":"business"}'
 ```
 
@@ -148,6 +205,68 @@ curl -s localhost:8790/v1/turn -H "Content-Type: application/json" -d '{
 - **Coding + voice** dictate + commands while you work  
 - **HTTP API** keys, rate limits, products, sessions  
 - **Zero npm deps** runtime  
+- **SaaS layer** tenant provisioning, Stripe billing, usage metering, admin panel  
+
+---
+
+## SaaS Tiers
+
+Self-host free forever. Paid tiers for the managed hosted offering.
+
+| Tier | Price | RPM | Turns/day | Highlights |
+|------|-------|-----|-----------|------------|
+| **Free** | $0 | 60 | 500 | Self-host · sandbox · patient VAD |
+| **Pro** | $29/mo | 600 | 50 000 | All personalities · agentic flows · custom brain hook |
+| **Team** | $149/mo | 3 000 | 500 000 | Multi-key (5 seats) · hospitality experts · usage dashboard · SLA 99.5% |
+| **Enterprise** | Contact | 20 000 | Unlimited | On-prem · SSO · HIPAA-ready hosting · custom VAD hooks |
+
+```bash
+# Provision free key instantly
+curl -s localhost:8790/v1/saas/checkout \
+  -H "Content-Type: application/json" \
+  -d '{"tier":"free","email":"you@example.com"}'
+# → { "ok": true, "api_key": "pv_…", "tier": "free" }
+
+# List SaaS tiers
+curl -s localhost:8790/v1/tiers
+```
+
+**[→ Open SaaS Dashboard](saas-dashboard.html)** — tier cards, instant key provisioning, usage stats, admin panel
+
+### Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `SAAS_MODE=1` | Enable SaaS routes (`/v1/tiers`, `/v1/saas/*`, `/v1/admin/*`) |
+| `MASTER_KEY` | Admin access — list tenants, suspend, upgrade |
+| `STRIPE_SECRET_KEY` | Real Stripe payments (omit → stub mode) |
+| `STRIPE_WEBHOOK_SECRET` | Webhook HMAC verification |
+| `STRIPE_PRICE_PRO` | Stripe price ID for Pro tier |
+| `STRIPE_PRICE_TEAM` | Stripe price ID for Team tier |
+| `FRONTEND_URL` | Redirect URL after Stripe checkout |
+| `REQUIRE_API_KEY=1` | Enforce API keys on all write routes |
+
+---
+
+## Sovereign Terminal
+
+An in-browser interactive shell that talks directly to your running API.
+
+**[→ terminal.html](terminal.html)**
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  ⚡  SOVEREIGN TERMINAL                                      ║
+╠══════════════════════════════════════════════════════════════╣
+║  ❯ GET /v1                         → catalog                 ║
+║  ❯ POST /v1/turn {"text":"help"}   → patient turn            ║
+║  ❯ POST /v1/saas/checkout {"tier":"free"} → api_key: pv_…   ║
+║  ❯ GET /v1/flows                   → agentic flows           ║
+║  ❯ help                            → command reference       ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+Features: syntax-highlighted JSON · preset library (30+ commands) · ↑↓ history · API key storage · live health indicator · works against any running instance.
 
 ---
 
@@ -156,6 +275,8 @@ curl -s localhost:8790/v1/turn -H "Content-Type: application/json" -d '{
 | Page | What |
 |------|------|
 | [index.html](index.html) | STT |
+| [terminal.html](terminal.html) | **⚡ Sovereign Terminal** |
+| [saas-dashboard.html](saas-dashboard.html) | **SaaS Dashboard — tiers, keys, usage** |
 | [demo-patient.html](demo-patient.html) | **1400ms patient travel mic** |
 | [demo-voice-agent.html](demo-voice-agent.html) | Personalities |
 | [demo-business.html](demo-business.html) | CS / sales |

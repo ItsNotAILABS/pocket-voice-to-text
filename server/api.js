@@ -22,6 +22,9 @@ const REQUIRE_API_KEY =
   process.env.POCKET_VOICE_REQUIRE_KEY === "1" ||
   !!MASTER_KEY;
 const LEGACY_API_KEY = (process.env.API_KEY || process.env.POCKET_VOICE_API_KEY || "").trim();
+const SAAS_MODE = process.env.SAAS_MODE === "1" || process.env.POCKET_VOICE_SAAS === "1";
+
+const Saas = SAAS_MODE ? require("./saas") : null;
 
 const sessions = new Map();
 
@@ -256,6 +259,13 @@ async function handler(req, res) {
       own_stack: true,
       default: "hybrid",
     });
+  }
+
+  // —— SaaS routes (SAAS_MODE=1) ——
+  if (SAAS_MODE) {
+    const isMaster = MASTER_KEY && extractKey(req) === MASTER_KEY;
+    const saasResult = await Saas.handleSaasRoute(req, res, path, readBody, json, isMaster);
+    if (saasResult !== null) return saasResult;
   }
 
   // —— Auth for write routes ——
@@ -526,6 +536,10 @@ function main() {
     console.log(
       `[pocket-voice-api] auth     ${REQUIRE_API_KEY ? "API keys required" : "open local (set REQUIRE_API_KEY=1 to sell)"}`
     );
+    if (SAAS_MODE) {
+      console.log(`[pocket-voice-api] saas     ENABLED · tiers GET /v1/tiers · checkout POST /v1/saas/checkout`);
+      console.log(`[pocket-voice-api] admin    GET /v1/admin/tenants · GET /v1/admin/usage`);
+    }
   });
 }
 
