@@ -21,6 +21,7 @@
     "test:verbose": "node --test --test-reporter=spec test/*.test.js",
     "api": "node server/api.js",
     "start": "node server/api.js",
+    "saas": "SAAS_MODE=1 node server/api.js",
     "demo": "npx --yes serve . -p 5173"
   },
   "keywords": [
