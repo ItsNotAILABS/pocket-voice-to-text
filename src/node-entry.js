@@ -11,6 +11,8 @@ const Keys = require("./keys");
 const Flows = require("./agent-flows");
 const STTPocket = require("./stt-pocket");
 const Studio = require("./studio-contract");
+const Ecosystem = require("./ecosystem-intelligence");
+const Resilience = require("./session-resilience");
 const { createEngine } = require("./engine");
 
 module.exports = {
@@ -24,6 +26,8 @@ module.exports = {
   Flows,
   STTPocket,
   Studio,
+  Ecosystem,
+  Resilience,
   createEngine,
   turn: function turn(text, opts) {
     return createEngine(opts).turn(text);
@@ -38,6 +42,18 @@ module.exports = {
   listStudioVisualizers: Studio.listVisualizers,
   getStudioCapabilities: Studio.capabilities,
   normalizeContextSnap: Studio.normalizeContextSnap,
+  getEcosystemCapabilities: Ecosystem.capabilityDescriptor,
+  validateSessionBudget: Ecosystem.validateSessionBudget,
+  contextPackFromSnap: Ecosystem.contextPackFromSnap,
+  chooseVoiceProvider: Ecosystem.providerDecision,
+  buildVoiceTelemetry: Ecosystem.telemetry,
+  buildVoiceHealth: Ecosystem.health,
+  buildVoiceHandoff: Ecosystem.handoff,
+  createVoiceRetryPolicy: Resilience.retryPolicy,
+  voiceRetryDecision: Resilience.retryDecision,
+  ProviderCircuitBreaker: Resilience.ProviderCircuitBreaker,
+  buildVoiceIdempotency: Resilience.idempotencyRecord,
+  buildVoiceJob: Resilience.sessionJob,
   shouldEndTurn: Turn.shouldEndTurn,
   shouldBargeIn: Turn.shouldBargeIn,
   createTurnMachine: Turn.createTurnMachine,

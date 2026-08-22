@@ -1,0 +1,38 @@
+name: Pocket Voice Test Diagnostics
+
+on:
+  pull_request:
+  push:
+    branches: [alpha-enterprise-v1]
+
+permissions:
+  contents: read
+
+jobs:
+  test-file:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+        file:
+          - agent-flows.test.js
+          - api.test.js
+          - business.test.js
+          - coding.test.js
+          - ecosystem-intelligence.test.js
+          - engine-context.test.js
+          - engine.test.js
+          - entry.test.js
+          - fusion-metadata.test.js
+          - modules-load.test.js
+          - personalities.test.js
+          - studio-contract.test.js
+          - turn-detection.test.js
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run isolated test file
+        run: node --test test/${{ matrix.file }}

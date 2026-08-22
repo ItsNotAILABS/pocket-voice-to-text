@@ -1,0 +1,12 @@
+{
+  "schema": "nexus.capability.v1",
+  "component": "pocket-voice",
+  "repository": "ItsNotAILABS/pocket-voice-to-text",
+  "role": "voice-conversation-control-plane",
+  "actions": ["voice.session.create","voice.turn.decide","voice.context.snap","voice.transcript.scaffold","voice.telemetry.report","voice.handoff"],
+  "produces": ["nexus.context-pack.v1","nexus.telemetry.v1","nexus.health.v1","nexus.handoff.v1"],
+  "consumes": ["nexus.task.v1","nexus.budget.v1","nexus.policy-decision.v1"],
+  "limits": {"identity_authority":false,"long_running_execution":false,"hidden_reasoning_export":false,"provider_credentials_in_browser":false},
+  "proof": {"state":"source","latency_claims_require_measured_artifacts":true},
+  "authority": "ItsNotAILABS/nexus"
+}
