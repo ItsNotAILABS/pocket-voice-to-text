@@ -1,0 +1,30 @@
+name: Pocket Voice Alpha CI
+
+on:
+  push:
+    branches: [master, alpha-enterprise-v1]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install
+        run: npm install --ignore-scripts
+      - name: Test
+        run: npm test
+      - name: Package smoke
+        run: |
+          node -e "const p=require('./src/node-entry'); if(!/^1\\.2\\./.test(p.version)) process.exit(1); console.log(p.product,p.version)"
+          npm pack --dry-run
