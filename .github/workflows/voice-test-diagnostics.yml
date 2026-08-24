@@ -3,7 +3,7 @@ name: Pocket Voice Test Diagnostics
 on:
   pull_request:
   push:
-    branches: [alpha-enterprise-v1]
+    branches: [master]
 
 permissions:
   contents: read
@@ -28,6 +28,8 @@ jobs:
           - personalities.test.js
           - studio-contract.test.js
           - turn-detection.test.js
+          - session-resilience.test.js
+          - reality-envelope.test.js
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
