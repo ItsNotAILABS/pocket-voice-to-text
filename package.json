@@ -1,7 +1,7 @@
 {
   "name": "@itsnotailabs/pocket-voice",
-  "version": "1.2.0",
-  "description": "Own your voice stack: patient VAD, hybrid STT, agentic flows, multi-personality agents, context snapping, and provider-neutral Voice Agent Studio contracts. MIT.",
+  "version": "1.3.0",
+  "description": "Voice that can converse, compile spoken intent into executable work, hand code/build/deploy jobs to POCKET, and report execution state with receipts.",
   "main": "src/node-entry.js",
   "exports": {
     ".": "./src/node-entry.js",
@@ -11,7 +11,9 @@
     "./coding": "./src/coding-core.js",
     "./stt": "./src/stt-pocket.js",
     "./flows": "./src/agent-flows.js",
-    "./studio": "./src/studio-contract.js"
+    "./studio": "./src/studio-contract.js",
+    "./reality": "./src/reality-envelope.js",
+    "./work-bridge": "./src/work-bridge.js"
   },
   "bin": {
     "pocket-voice-api": "./server/cli.js"
@@ -31,7 +33,9 @@
     "speech-to-text",
     "text-to-speech",
     "voice-agent",
-    "customer-service",
+    "voice-coding",
+    "voice-deploy",
+    "execution-envelope",
     "realtime",
     "context-snap",
     "voice-studio",
@@ -49,7 +53,7 @@
   },
   "homepage": "https://github.com/ItsNotAILABS/pocket-voice-to-text#readme",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "files": [
     "src/",
