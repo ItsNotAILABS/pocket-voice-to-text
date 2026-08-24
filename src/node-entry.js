@@ -14,6 +14,7 @@ const Studio = require("./studio-contract");
 const Ecosystem = require("./ecosystem-intelligence");
 const Resilience = require("./session-resilience");
 const Reality = require("./reality-envelope");
+const WorkBridge = require("./work-bridge");
 const { createEngine } = require("./engine");
 
 module.exports = {
@@ -30,6 +31,7 @@ module.exports = {
   Ecosystem,
   Resilience,
   Reality,
+  WorkBridge,
   createEngine,
   turn: function turn(text, opts) {
     return createEngine(opts).turn(text);
@@ -62,6 +64,8 @@ module.exports = {
   sealRealityEnvelope: Reality.seal,
   speakRealityState: Reality.speakState,
   isExecutableVoiceIntent: Reality.isExecutable,
+  submitRealityEnvelope: WorkBridge.submit,
+  voiceToWork: WorkBridge.compileAndSubmit,
   shouldEndTurn: Turn.shouldEndTurn,
   shouldBargeIn: Turn.shouldBargeIn,
   createTurnMachine: Turn.createTurnMachine,
