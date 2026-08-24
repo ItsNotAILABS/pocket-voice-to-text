@@ -13,10 +13,11 @@ const STTPocket = require("./stt-pocket");
 const Studio = require("./studio-contract");
 const Ecosystem = require("./ecosystem-intelligence");
 const Resilience = require("./session-resilience");
+const Reality = require("./reality-envelope");
 const { createEngine } = require("./engine");
 
 module.exports = {
-  version: "1.2.0",
+  version: "1.3.0",
   product: "Pocket Voice",
   Business,
   Personalities,
@@ -28,6 +29,7 @@ module.exports = {
   Studio,
   Ecosystem,
   Resilience,
+  Reality,
   createEngine,
   turn: function turn(text, opts) {
     return createEngine(opts).turn(text);
@@ -54,6 +56,12 @@ module.exports = {
   ProviderCircuitBreaker: Resilience.ProviderCircuitBreaker,
   buildVoiceIdempotency: Resilience.idempotencyRecord,
   buildVoiceJob: Resilience.sessionJob,
+  compileRealityEnvelope: Reality.compile,
+  validateRealityEnvelope: Reality.validate,
+  updateRealityEnvelope: Reality.event,
+  sealRealityEnvelope: Reality.seal,
+  speakRealityState: Reality.speakState,
+  isExecutableVoiceIntent: Reality.isExecutable,
   shouldEndTurn: Turn.shouldEndTurn,
   shouldBargeIn: Turn.shouldBargeIn,
   createTurnMachine: Turn.createTurnMachine,
@@ -64,6 +72,8 @@ module.exports = {
   FUSION_VERSION: Turn.FUSION_VERSION,
   STUDIO_SCHEMA: Studio.SCHEMA,
   CONTEXT_SNAP_SCHEMA: Studio.CONTEXT_SNAP_SCHEMA,
+  REALITY_SCHEMA: Reality.SCHEMA,
+  REALITY_RECEIPT_SCHEMA: Reality.RECEIPT_SCHEMA,
   listFlows: Flows.listFlows,
   matchFlow: Flows.matchFlow,
   advanceFlow: Flows.advance,
