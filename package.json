@@ -12,6 +12,7 @@
     "./stt": "./src/stt-pocket.js",
     "./flows": "./src/agent-flows.js",
     "./studio": "./src/studio-contract.js",
+    "./voice-state": "./src/voice-state.js",
     "./reality": "./src/reality-envelope.js",
     "./work-bridge": "./src/work-bridge.js"
   },
@@ -39,6 +40,8 @@
     "realtime",
     "context-snap",
     "voice-studio",
+    "voice-state",
+    "consent",
     "open-source",
     "pocket"
   ],
@@ -61,6 +64,7 @@
     "assets/",
     "docs/",
     "voice-to-text.js",
+    "ecosystem.surface.json",
     "LICENSE",
     "README.md",
     "DEVBOARD.md"

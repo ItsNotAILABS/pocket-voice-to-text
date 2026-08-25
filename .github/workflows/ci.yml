@@ -1,9 +1,10 @@
-name: Pocket Voice Alpha CI
+name: Pocket Voice Corpus CI
 
 on:
   push:
-    branches: [master, alpha-enterprise-v1]
+    branches: [master]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,9 +23,24 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Install
         run: npm install --ignore-scripts
+      - name: Syntax
+        run: node --check src/voice-state.js && node --check src/node-entry.js
       - name: Test
         run: npm test
-      - name: Package smoke
+      - name: Corpus voice-state gate
         run: |
-          node -e "const p=require('./src/node-entry'); if(!/^1\\.2\\./.test(p.version)) process.exit(1); console.log(p.product,p.version)"
-          npm pack --dry-run
+          node - <<'NODE'
+          const p = require('./src/node-entry');
+          if (!/^1\.3\./.test(p.version)) process.exit(1);
+          if (p.VOICE_STATE_SCHEMA !== 'pocket.voice-state.v1') process.exit(1);
+          const state = p.createVoiceState({
+            session_id: 'ci-session',
+            principal: {principal_id:'ci-user',principal_type:'human',tenant_id:'ci-org'},
+            consent: {state:'session',capture:true,transcribe:true,synthesize:true},
+            observed_at: '2026-08-24T00:00:00Z'
+          });
+          if (p.validateVoiceState(state).length) process.exit(1);
+          console.log(p.product, p.version, p.VOICE_STATE_SCHEMA, state.state_sha256);
+          NODE
+      - name: Package dry run
+        run: npm pack --dry-run
