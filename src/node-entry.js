@@ -13,6 +13,7 @@ const STTPocket = require("./stt-pocket");
 const Studio = require("./studio-contract");
 const Ecosystem = require("./ecosystem-intelligence");
 const Resilience = require("./session-resilience");
+const VoiceState = require("./voice-state");
 const Reality = require("./reality-envelope");
 const WorkBridge = require("./work-bridge");
 const { createEngine } = require("./engine");
@@ -20,6 +21,7 @@ const { createEngine } = require("./engine");
 module.exports = {
   version: "1.3.0",
   product: "Pocket Voice",
+  corpus: "medina.corpus-architectura.v2@2.1.0",
   Business,
   Personalities,
   Coding,
@@ -30,6 +32,7 @@ module.exports = {
   Studio,
   Ecosystem,
   Resilience,
+  VoiceState,
   Reality,
   WorkBridge,
   createEngine,
@@ -58,6 +61,10 @@ module.exports = {
   ProviderCircuitBreaker: Resilience.ProviderCircuitBreaker,
   buildVoiceIdempotency: Resilience.idempotencyRecord,
   buildVoiceJob: Resilience.sessionJob,
+  createVoiceState: VoiceState.createVoiceState,
+  validateVoiceState: VoiceState.validateVoiceState,
+  updateVoiceConsent: VoiceState.updateConsent,
+  planVoiceProsody: VoiceState.planProsody,
   compileRealityEnvelope: Reality.compile,
   validateRealityEnvelope: Reality.validate,
   updateRealityEnvelope: Reality.event,
@@ -76,6 +83,7 @@ module.exports = {
   FUSION_VERSION: Turn.FUSION_VERSION,
   STUDIO_SCHEMA: Studio.SCHEMA,
   CONTEXT_SNAP_SCHEMA: Studio.CONTEXT_SNAP_SCHEMA,
+  VOICE_STATE_SCHEMA: VoiceState.SCHEMA,
   REALITY_SCHEMA: Reality.SCHEMA,
   REALITY_RECEIPT_SCHEMA: Reality.RECEIPT_SCHEMA,
   listFlows: Flows.listFlows,
