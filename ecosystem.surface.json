@@ -3,9 +3,15 @@
   "component": "pocket-voice",
   "repository": "ItsNotAILABS/pocket-voice-to-text",
   "role": "voice-conversation-and-work-control-plane",
+  "research_corpus": "medina.corpus-architectura.v2@2.1.0",
   "actions": [
     "voice.session.create",
+    "voice.state.create",
+    "voice.state.validate",
+    "voice.consent.update",
     "voice.turn.decide",
+    "voice.interruption.record",
+    "voice.prosody.plan",
     "voice.context.snap",
     "voice.transcript.scaffold",
     "voice.telemetry.report",
@@ -17,6 +23,7 @@
     "voice.work.submit"
   ],
   "produces": [
+    "pocket.voice-state.v1",
     "nexus.context-pack.v1",
     "nexus.telemetry.v1",
     "nexus.health.v1",
@@ -25,6 +32,7 @@
     "pocket.voice-reality-receipt.v1"
   ],
   "consumes": [
+    "nexus.identity-ref.v1",
     "nexus.task.v1",
     "nexus.budget.v1",
     "nexus.policy-decision.v1",
@@ -36,12 +44,18 @@
     "long_running_execution": false,
     "hidden_reasoning_export": false,
     "provider_credentials_in_browser": false,
-    "direct_host_execution": false
+    "direct_host_execution": false,
+    "voice_adaptation_without_explicit_consent": false,
+    "speaker_clone_without_explicit_consent": false,
+    "latency_claim_without_artifact": false,
+    "voice_state_is_language_model_state": false
   },
   "proof": {
     "state": "source-tested",
     "reality_envelope_contract_test": true,
-    "latency_claims_require_measured_artifacts": true
+    "voice_state_contract": "src/voice-state.js",
+    "latency_claims_require_measured_artifacts": true,
+    "expressiveness_claims_require_blinded_evaluation": true
   },
   "authority": "ItsNotAILABS/nexus"
 }
