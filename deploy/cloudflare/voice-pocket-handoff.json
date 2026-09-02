@@ -1,0 +1,26 @@
+{
+  "schema": "pocket.voice_cloud_handoff.v1",
+  "surface": "Voice-to-Text Pocket",
+  "canonical_beta_url": "https://beta.pocketnova.app/voice/",
+  "repo": "https://github.com/ItsNotAILABS/pocket-voice-to-text",
+  "routes": [
+    { "host": "beta.pocketnova.app", "path": "/voice/*", "surface": "voice showcase and transcript API" },
+    { "host": "beta.pocketnova.app", "path": "/sdk/pocket-voice-client.js", "surface": "browser SDK" }
+  ],
+  "web_entrypoint": "web/voice-to-text-pocket/index.html",
+  "sdk_entrypoint": "sdk/pocket-voice-client.js",
+  "api_contracts": [
+    { "method": "POST", "path": "/voice/transcribe", "purpose": "audio reference to transcript receipt" },
+    { "method": "POST", "path": "/voice/task-packets", "purpose": "transcript to agent task packet" }
+  ],
+  "required_operator_rules": [
+    "Do not execute task packets from speech without explicit operator approval.",
+    "Do not treat a transcript as a production command unless it is converted into a signed/hashed action receipt.",
+    "Do not store raw secrets, private keys, payment credentials, seed phrases, CVV/CVC, or raw card data in transcripts."
+  ],
+  "deployment_prompt_for_claude_or_cloud": "Deploy Voice-to-Text Pocket under https://beta.pocketnova.app/voice/. Mount web/voice-to-text-pocket/index.html as the showcase, expose sdk/pocket-voice-client.js, and wire transcript packets to Agent Pocket only after explicit operator approval and receipt creation.",
+  "validation": {
+    "command": "python scripts/validate_voice_pocket_handoff.py",
+    "receipt": "dist/voice-pocket-handoff/validation-receipt.json"
+  }
+}
