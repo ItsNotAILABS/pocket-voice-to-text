@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Voice-to-Text Pocket</title>
+  <style>
+    body { margin:0; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background:#05070d; color:#f8fafc; }
+    main { max-width:980px; margin:0 auto; padding:44px 18px; }
+    section { border:1px solid #263244; border-radius:26px; background:#0f172a; padding:28px; }
+    h1 { font-size:clamp(34px,7vw,72px); line-height:.95; letter-spacing:-.05em; margin:0 0 16px; }
+    p { color:#94a3b8; line-height:1.6; }
+    textarea { width:100%; min-height:150px; border-radius:18px; border:1px solid #263244; background:#020617; color:#e2e8f0; padding:16px; font:inherit; }
+    button { margin-top:12px; margin-right:8px; border:1px solid #263244; background:#111827; color:#f8fafc; padding:12px 14px; border-radius:14px; cursor:pointer; }
+    pre { white-space:pre-wrap; background:#020617; border:1px dashed #263244; border-radius:16px; padding:14px; color:#cbd5e1; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Voice-to-Text Pocket</h1>
+      <p>Browser showcase for turning voice or typed transcript into a POCKET task packet. It does not infer production execution; it creates a transcript receipt and an optional task payload for Agent Pocket.</p>
+      <textarea id="transcript" placeholder="Speak through browser dictation, paste transcript, or type an operator command..."></textarea>
+      <div>
+        <button id="start">Start browser speech capture</button>
+        <button id="packet">Create task packet</button>
+      </div>
+      <pre id="out">No packet yet.</pre>
+    </section>
+  </main>
+  <script type="module">
+    import { PocketVoiceClient } from '../../sdk/pocket-voice-client.js';
+    const client = new PocketVoiceClient({ baseUrl: 'https://beta.pocketnova.app' });
+    const transcript = document.getElementById('transcript');
+    const out = document.getElementById('out');
+    document.getElementById('start').onclick = () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) { out.textContent = 'SpeechRecognition not available in this browser.'; return; }
+      const rec = new SpeechRecognition();
+      rec.lang = 'en-US';
+      rec.interimResults = true;
+      rec.onresult = event => { transcript.value = Array.from(event.results).map(r => r[0].transcript).join(' '); };
+      rec.start();
+    };
+    document.getElementById('packet').onclick = async () => {
+      const packet = await client.localTranscriptPacket({ transcript: transcript.value, target_agent: 'agent-pocket', operator_approval: false });
+      out.textContent = JSON.stringify(packet, null, 2);
+    };
+  </script>
+</body>
+</html>
