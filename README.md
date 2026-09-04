@@ -79,6 +79,32 @@ Pocket Voice does not equate silence with completion. The turn engine combines s
 | patient / travel / complex answers | 1000–1500 ms |
 | dictation | 2000+ ms |
 
+We open-sourced this so companies can **mess with real turn-taking** — not just consume a blob.
+
+---
+
+## Ecosystem (ItsNotAI Labs)
+
+| Product | Repo | Role |
+|---------|------|------|
+| **POCKET host** | [ItsNotAILABS/pocket](https://github.com/ItsNotAILABS/pocket) | Desk · Aria · phone · fusion voice · `/v1/pocket-voice/*` proxy |
+| **POCKET Agent** | [ItsNotAILABS/pocket-agent](https://github.com/ItsNotAILABS/pocket-agent) | Coding agent + install slices |
+| **Pocket Voice** | **this repo** | Sovereign STT/TTS · patient VAD · multi-personality · agentic flows |
+| **Electron / Edge** | pocket `desktop-electron` · `Open-POCKET-Edge` | Sovereign desk shells |
+| **Phone Agent** | `pocket-phone-agent` | Agentic phone (`:8795`) via internal SDK → host API |
+
+When the POCKET host is up, voice is same-origin proxied so the mic works in Edge app mode without CORS pain.
+
+### Related host surfaces
+
+| Surface | Path |
+|---------|------|
+| Aria / Voice desk agent | `/desk` mode `voice` |
+| Voice Studio | `/studio/voice` |
+| Phone Aria | `/phone` |
+| Agent Mail | `/mail` · agents have their own inboxes |
+| Docs | `/docs` |
+
 ```bash
 curl -s http://127.0.0.1:8790/v1/turn/decide \
   -H 'content-type: application/json' \
