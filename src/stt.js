@@ -1,6 +1,14 @@
 /**
  * Continuous speech-to-text (Web Speech API).
  * Pocket Voice Stack — open source.
+ *
+ * HONEST PLACEMENT: this module is the CLOUD FALLBACK. The browser's
+ * SpeechRecognition sends microphone audio to the browser vendor's speech
+ * service (e.g. Google) for recognition. The sovereign default is
+ * src/stt-server.js, which captures utterances and has them transcribed by
+ * LOCAL faster-whisper on the server host — no audio leaves the machine.
+ * Use this module only when local ASR is unavailable or when the operator
+ * explicitly opts out with POCKET_VOICE_STT=webspeech.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();

@@ -10,6 +10,7 @@ const Turn = require("./turn-detection");
 const Keys = require("./keys");
 const Flows = require("./agent-flows");
 const STTPocket = require("./stt-pocket");
+const STTServer = require("./stt-server");
 const Studio = require("./studio-contract");
 const Ecosystem = require("./ecosystem-intelligence");
 const Resilience = require("./session-resilience");
@@ -29,6 +30,7 @@ module.exports = {
   Keys,
   Flows,
   STTPocket,
+  STTServer, // sovereign default: mic -> utterance -> local faster-whisper
   Studio,
   Ecosystem,
   Resilience,
@@ -89,6 +91,8 @@ module.exports = {
   listFlows: Flows.listFlows,
   matchFlow: Flows.matchFlow,
   advanceFlow: Flows.advance,
-  STT_ENGINES: STTPocket.engines,
+  STT_ENGINES: STTServer.engines, // sovereign default first: server (local Whisper), webspeech (cloud fallback)
+  STT_ENGINE_DEFAULT: STTServer.defaultEngine,
+  STT_LEGACY_ENGINES: STTPocket.engines,
   STT_SCHEMA: STTPocket.schema,
 };

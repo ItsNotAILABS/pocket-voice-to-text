@@ -67,6 +67,135 @@ function readBody(req) {
   });
 }
 
+function readRawBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let n = 0;
+    req.on("data", (c) => {
+      n += c.length;
+      if (n > maxBytes) {
+        reject(new Error("body_too_large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+// Minimal multipart/form-data parser (no dependencies). Returns
+// { fields: {name: string}, files: {name: {filename, contentType, data: Buffer}} }.
+function parseMultipart(buf, contentType) {
+  const m = /boundary=(?:"([^"]+)"|([^\s;]+))/.exec(contentType || "");
+  if (!m) return null;
+  const boundary = Buffer.from("--" + (m[1] || m[2]));
+  const fields = {};
+  const files = {};
+  let start = 0;
+  for (;;) {
+    const b0 = buf.indexOf(boundary, start);
+    if (b0 < 0) break;
+    let p = b0 + boundary.length;
+    if (buf[p] === 0x2d && buf[p + 1] === 0x2d) break; // closing --
+    if (buf[p] === 0x0d && buf[p + 1] === 0x0a) p += 2;
+    const hend = buf.indexOf("\r\n\r\n", p);
+    if (hend < 0) break;
+    const head = buf.slice(p, hend).toString("latin1");
+    const next = buf.indexOf(boundary, hend + 4);
+    if (next < 0) break; // truncated part — stop rather than accept a partial body
+    const body = buf.slice(hend + 4, next);
+    const trimmed = body.length && body[body.length - 2] === 0x0d ? body.slice(0, -2) : body;
+    const nm = /name="([^"]+)"/.exec(head);
+    const fn = /filename="([^"]*)"/.exec(head);
+    const ct = /Content-Type:\s*([^\r\n;]+)/i.exec(head);
+    if (nm) {
+      if (fn && fn[1]) files[nm[1]] = { filename: fn[1], contentType: (ct && ct[1].trim()) || "application/octet-stream", data: trimmed };
+      else fields[nm[1]] = trimmed.toString("utf8");
+    }
+    start = hend + 4;
+  }
+  return { fields, files };
+}
+
+const STT_TMP = require("os").tmpdir() + "/pocket-voice-stt";
+const POCKET_HOST_URL = (process.env.POCKET_HOST_URL || "http://127.0.0.1:8787").replace(/\/$/, "");
+
+// Transcribe a saved audio file with the bundled local faster-whisper helper.
+// Resolves {ok, text, language, duration, engine} or {ok:false, code} where
+// code === "not_installed" means the caller should proxy to the POCKET host.
+function transcribeLocalFile(audioPath, lang) {
+  return new Promise((resolve) => {
+    const { spawn } = require("child_process");
+    const py = spawn(
+      process.env.PYTHON || "python3",
+      [require("path").join(__dirname, "stt-local.py"), audioPath, "--lang", lang || "en"]
+      // NOTE: child_process.spawn has no `timeout` option (that's execFile) —
+      // enforce the budget with an explicit kill timer instead.
+    );
+    let out = "";
+    let err = "";
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    const timer = setTimeout(() => {
+      try { py.kill("SIGKILL"); } catch (_) {}
+      finish({ ok: false, code: "transcribe_timeout", error: "local whisper exceeded 120s" });
+    }, 120000);
+    py.stdout.on("data", (c) => (out += c));
+    py.stderr.on("data", (c) => (err += c));
+    py.on("error", () => finish({ ok: false, code: "spawn_failed", error: err.slice(0, 200) }));
+    py.on("close", (code) => {
+      if (code === 2) return finish({ ok: false, code: "not_installed" });
+      try {
+        const j = JSON.parse(out.trim().split("\n").pop() || "{}");
+        if (j && j.ok) return finish({ ok: true, text: j.text, language: j.language, duration: j.duration, engine: "local-whisper", model: j.model });
+        return finish({ ok: false, code: "transcribe_failed", error: (j && j.error) || err.slice(0, 200) || "exit " + code });
+      } catch {
+        return finish({ ok: false, code: "bad_output", error: (out + err).slice(0, 200) });
+      }
+    });
+  });
+}
+
+// Proxy audio to the POCKET host's sovereign STT (same-host JSON pattern).
+// The host transcribes with its own local faster-whisper — audio still never
+// goes to a cloud vendor.
+function proxyToPocketHost(audioPath, lang) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({ audio_path: audioPath, lang: lang || "en", engine: "local_whisper" });
+    const u = new URL(POCKET_HOST_URL + "/v1/voice/stt");
+    const req = (u.protocol === "https:" ? require("https") : require("http")).request(
+      {
+        hostname: u.hostname,
+        port: u.port || (u.protocol === "https:" ? 443 : 80),
+        path: u.pathname,
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+        timeout: 120000,
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          try {
+            const j = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+            if (j && j.ok && j.text) {
+              return resolve({ ok: true, text: j.text, language: j.language || lang, duration: j.duration, engine: "pocket-host-whisper", model: j.model });
+            }
+            return resolve({ ok: false, code: "host_failed", error: (j && (j.error || j.hint)) || "host error" });
+          } catch {
+            return resolve({ ok: false, code: "host_bad_response" });
+          }
+        });
+      }
+    );
+    req.on("error", (e) => resolve({ ok: false, code: "host_unreachable", error: String((e && e.message) || e).slice(0, 160) }));
+    req.on("timeout", () => { req.destroy(); resolve({ ok: false, code: "host_timeout" }); });
+    req.end(payload);
+  });
+}
+
 function extractKey(req) {
   const h = req.headers["x-api-key"] || "";
   const auth = req.headers["authorization"] || "";
@@ -178,8 +307,8 @@ async function handler(req, res) {
         "POST /v1/fusion/metadata": "Build conversational Fusion input vector (no industry Deep Fusion)",
         "GET /v1/flows": "Agentic multi-step voice flows",
         "POST /v1/flows/advance": "Advance / match agentic flow",
-        "GET /v1/stt/engines": "Own STT engines (hybrid · pocket · webspeech)",
-        "POST /v1/stt/transcribe": "Own STT scaffold",
+        "GET /v1/stt/engines": "Sovereign STT engines (local_whisper default · hybrid · webspeech cloud fallback)",
+        "POST /v1/stt/transcribe": "Local Whisper transcription (multipart audio; on-device, private)",
         "POST /v1/barge-in": "Barge-in decision",
         "POST /v1/context": "Put cross-domain buffer fact",
         "POST /v1/listening": "Configure patient/stress/expert for session",
@@ -255,9 +384,25 @@ async function handler(req, res) {
     return json(res, 200, {
       ok: true,
       schema: PocketVoice.STT_SCHEMA || "pocket.stt.v1",
-      engines: PocketVoice.STT_ENGINES || ["hybrid", "pocket", "webspeech"],
       own_stack: true,
-      default: "hybrid",
+      default: "local_whisper",
+      engines: [
+        {
+          id: "local_whisper",
+          label: "Local Whisper (on-device, private — audio never leaves this host)",
+          default: true,
+          endpoint: "POST /v1/stt/transcribe",
+        },
+        {
+          id: "hybrid",
+          label: "Hybrid (client energy VAD + transcript)",
+          endpoint: "POST /v1/stt/transcribe",
+        },
+        {
+          id: "webspeech",
+          label: "Browser SpeechRecognition (CLOUD fallback — audio goes to the browser vendor, e.g. Google)",
+        },
+      ],
     });
   }
 
@@ -399,22 +544,99 @@ async function handler(req, res) {
     }
 
     if (req.method === "POST" && path === "/v1/stt/transcribe") {
-      const body = await readBody(req);
-      // Own STT scaffold: accept client transcript + energy; optional host does heavy ASR
-      const text = String(body.text || body.transcript || "").trim();
-      return json(res, 200, {
-        ok: true,
-        schema: "pocket.stt.v1",
-        engine: body.engine || "hybrid",
-        text: text,
-        is_final: body.is_final !== false,
-        energy: body.energy,
-        speech_active: body.speech_active,
-        note: text
-          ? "Transcript accepted on own stack"
-          : "Provide text from hybrid/webspeech, or wire host Whisper at POCKET /v1/voice/stt",
-        host_stt_hint: "POST POCKET /v1/voice/stt with audio when local ASR is installed",
-      });
+      // Sovereign STT: utterance audio is transcribed ON THIS MACHINE with
+      // local faster-whisper (server/stt-local.py). If faster-whisper is not
+      // installed here, audio is proxied to the POCKET host's local Whisper —
+      // it NEVER goes to a browser-vendor cloud speech API.
+      // Back-compat: JSON {text} from hybrid clients is still accepted.
+      const ctype = String(req.headers["content-type"] || "");
+      const done = (code, obj) => json(res, code, obj);
+      const finishLocal = (r, lang) => {
+        if (r.ok) {
+          return done(200, {
+            ok: true,
+            schema: "pocket.stt.v1",
+            engine: r.engine, // "local-whisper" | "pocket-host-whisper"
+            model: r.model,
+            text: r.text,
+            language: r.language,
+            duration: r.duration,
+            own_stack: true,
+            cloud: false,
+          });
+        }
+        return done(503, {
+          ok: false,
+          schema: "pocket.stt.v1",
+          error: r.code || "transcribe_failed",
+          detail: r.error || "",
+          hint: "Install faster-whisper (pip install faster-whisper) or run POCKET scripts/setup-sovereign-stt.sh",
+          own_stack: true,
+        });
+      };
+      const saveUpload = (data, filename) => {
+        const fs = require("fs");
+        const path = require("path");
+        const crypto = require("crypto");
+        fs.mkdirSync(STT_TMP, { recursive: true });
+        const ext = (path.extname(filename || "") || ".webm").slice(0, 8);
+        const p = path.join(STT_TMP, "utt-" + Date.now() + "-" + crypto.randomBytes(6).toString("hex") + ext);
+        fs.writeFileSync(p, data);
+        return p;
+      };
+      let audioPath = "";
+      let lang = "en";
+      try {
+        if (ctype.includes("multipart/form-data")) {
+          const raw = await readRawBody(req, 15 * 1024 * 1024);
+          const mp = parseMultipart(raw, ctype);
+          if (!mp) return done(400, { ok: false, error: "bad_multipart" });
+          const f = mp.files.audio || Object.values(mp.files)[0];
+          if (!f) return done(400, { ok: false, error: "no_audio", hint: "multipart field 'audio' required" });
+          lang = String(mp.fields.lang || mp.fields.language || "en").slice(0, 8);
+          audioPath = saveUpload(f.data, f.filename);
+        } else if (ctype.startsWith("audio/")) {
+          const raw = await readRawBody(req, 15 * 1024 * 1024);
+          if (!raw.length) return done(400, { ok: false, error: "empty_audio" });
+          lang = String(new URL(req.url || "/", "http://x").searchParams.get("lang") || "en").slice(0, 8);
+          audioPath = saveUpload(raw, "utterance." + (ctype.split("/")[1] || "webm").slice(0, 8));
+        } else {
+          const body = await readBody(req);
+          const text = String(body.text || body.transcript || "").trim();
+          if (text) {
+            // Hybrid client transcript — accepted, no audio involved.
+            return done(200, {
+              ok: true,
+              schema: "pocket.stt.v1",
+              engine: body.engine || "hybrid",
+              text,
+              is_final: body.is_final !== false,
+              energy: body.energy,
+              speech_active: body.speech_active,
+              own_stack: true,
+              note: "Transcript accepted on own stack (no cloud STT used)",
+            });
+          }
+          return done(400, {
+            ok: false,
+            error: "no_audio_or_text",
+            hint: "POST multipart audio (field 'audio') for local Whisper, or JSON {text} for hybrid",
+          });
+        }
+      } catch (e) {
+        return done(400, { ok: false, error: String((e && e.message) || e).slice(0, 120) });
+      }
+      try {
+        let r = await transcribeLocalFile(audioPath, lang);
+        if (!r.ok && r.code === "not_installed") {
+          // Local faster-whisper missing here — proxy to the POCKET host's
+          // sovereign STT (same-host JSON pattern; still on-device).
+          r = await proxyToPocketHost(audioPath, lang);
+        }
+        return finishLocal(r, lang);
+      } finally {
+        try { require("fs").unlinkSync(audioPath); } catch {}
+      }
     }
 
     if (req.method === "POST" && path === "/v1/fusion/metadata") {
