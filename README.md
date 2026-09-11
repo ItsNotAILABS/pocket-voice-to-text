@@ -361,7 +361,7 @@ The repository CI exercises Node 20 and 22 plus package smoke checks.
 src/
 ├── node-entry.js
 ├── engine.js
-├── turn-detection.js
+├── turn-detection.js      # heuristic turn detection (no model required)
 ├── stt-pocket.js
 ├── studio-contract.js
 ├── ecosystem-intelligence.js
@@ -370,6 +370,14 @@ src/
 ├── business.js
 ├── personalities.js
 └── keys.js
+server/
+├── api.js                 # HTTP API (incl. POST /v1/turn/complete)
+├── stt-local.py           # local faster-whisper sidecar
+└── turn-local.py          # local pocket-voice-complete sidecar (torch CPU)
+checkpoints/
+└── pocket-voice-complete/
+    └── leg-3/             # trained turn-completion classifier (1.43M params,
+                           # eval acc 0.99 on synthetic data — see receipt.json)
 
 test/
 docs/

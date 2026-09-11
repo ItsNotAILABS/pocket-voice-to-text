@@ -158,6 +158,48 @@ function transcribeLocalFile(audioPath, lang) {
   });
 }
 
+// Score a transcript with the trained pocket-voice-complete classifier via the
+// bundled local torch sidecar (server/turn-local.py, CPU, on this machine).
+// Resolves {ok, complete, score, model, engine, latency_ms} or {ok:false, code}
+// where code === "not_installed" (torch missing) or "model_missing"
+// (checkpoint absent) means the caller should answer 503, not proxy anywhere:
+// the model is local-only by design.
+function completeLocalTurn(transcript) {
+  return new Promise((resolve) => {
+    const { spawn } = require("child_process");
+    const started = Date.now();
+    const py = spawn(
+      process.env.PYTHON || "python3",
+      [require("path").join(__dirname, "turn-local.py"), transcript]
+      // NOTE: child_process.spawn has no `timeout` option (that's execFile) —
+      // enforce the budget with an explicit kill timer instead.
+    );
+    let out = "";
+    let err = "";
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    const timer = setTimeout(() => {
+      try { py.kill("SIGKILL"); } catch (_) {}
+      finish({ ok: false, code: "turn_timeout", error: "local turn model exceeded 60s" });
+    }, 60000);
+    py.stdout.on("data", (c) => (out += c));
+    py.stderr.on("data", (c) => (err += c));
+    py.on("error", () => finish({ ok: false, code: "spawn_failed", error: err.slice(0, 200) }));
+    py.on("close", (code) => {
+      const latency_ms = Date.now() - started;
+      if (code === 2) return finish({ ok: false, code: "not_installed", latency_ms });
+      if (code === 3) return finish({ ok: false, code: "model_missing", latency_ms });
+      try {
+        const j = JSON.parse(out.trim().split("\n").pop() || "{}");
+        if (j && j.ok) return finish({ ok: true, complete: !!j.complete, score: Number(j.score), model: j.model, engine: "local-turn", latency_ms });
+        return finish({ ok: false, code: "turn_failed", error: (j && j.error) || err.slice(0, 200) || "exit " + code, latency_ms });
+      } catch {
+        return finish({ ok: false, code: "bad_output", error: (out + err).slice(0, 200), latency_ms });
+      }
+    });
+  });
+}
+
 // Proxy audio to the POCKET host's sovereign STT (same-host JSON pattern).
 // The host transcribes with its own local faster-whisper — audio still never
 // goes to a cloud vendor.
@@ -304,6 +346,7 @@ async function handler(req, res) {
         "GET /v1/experts": "Context experts (airport, hotel, …)",
         "POST /v1/turn": "Chat turn + context buffer + fusion + agentic flows",
         "POST /v1/turn/decide": "Hybrid end-of-turn (silence + semantic)",
+        "POST /v1/turn/complete": "Trained turn-completion classifier (local torch, on-device, own stack)",
         "POST /v1/fusion/metadata": "Build conversational Fusion input vector (no industry Deep Fusion)",
         "GET /v1/flows": "Agentic multi-step voice flows",
         "POST /v1/flows/advance": "Advance / match agentic flow",
@@ -493,6 +536,28 @@ async function handler(req, res) {
         speechActive: body.speech_active,
         speakingRate: body.speaking_rate,
       });
+      // Opt-in trained semantic signal: pocket-voice-complete (local torch
+      // sidecar) acts as the semantic authority when the caller passes
+      // {"semantic": true}. Default off — the heuristic path above is
+      // untouched when the flag is absent. Conservative merge: the model may
+      // only END a turn the heuristics wanted to extend (fixes false
+      // negatives like "what time is it"); it never holds open a turn the
+      // heuristics would end.
+      if (body.semantic === true && transcript) {
+        const s = await completeLocalTurn(transcript);
+        if (s.ok) {
+          d.semantic = { complete: s.complete, score: s.score, model: s.model, latency_ms: s.latency_ms };
+          if (s.complete && s.score >= 0.9 && d.reason === "semantic_incomplete") {
+            d.end = true;
+            d.reason = "semantic_model_complete";
+            d.complete = true;
+            d.incomplete = false;
+            delete d.extend_ms;
+          }
+        } else {
+          d.semantic = { error: s.code || "unavailable" };
+        }
+      }
       let fusion = null;
       try {
         if (body.session_id && sessions.has(body.session_id)) {
@@ -530,6 +595,38 @@ async function handler(req, res) {
       }
       if (a.key) Keys.recordUsage(a.key.id, "decide");
       return json(res, 200, { ok: true, ...d, fusion });
+    }
+
+    if (req.method === "POST" && path === "/v1/turn/complete") {
+      // Trained turn-completion classifier (pocket-voice-complete leg-3),
+      // scored ON THIS MACHINE via server/turn-local.py (torch CPU).
+      // No transcript leaves the host. 503 when torch/checkpoint absent.
+      const body = await readBody(req);
+      const transcript = String(body.transcript || body.text || "");
+      if (!transcript) return json(res, 400, { ok: false, error: "empty_transcript" });
+      const r = await completeLocalTurn(transcript);
+      if (r.ok) {
+        if (a.key) Keys.recordUsage(a.key.id, "turn_complete");
+        return json(res, 200, {
+          ok: true,
+          schema: "pocket.turn.complete.v1",
+          complete: r.complete,
+          score: r.score,
+          model: r.model,
+          engine: r.engine,
+          latency_ms: r.latency_ms,
+          own_stack: true,
+          cloud: false,
+        });
+      }
+      return json(res, 503, {
+        ok: false,
+        schema: "pocket.turn.complete.v1",
+        error: r.code || "turn_model_unavailable",
+        detail: r.error || "",
+        hint: "pip install torch (CPU build) and keep checkpoints/pocket-voice-complete/leg-3/ in place, or set POCKET_TURN_MODEL_DIR",
+        own_stack: true,
+      });
     }
 
     if (req.method === "POST" && path === "/v1/flows/advance") {

@@ -9,3 +9,4 @@ coverage/
 
 # OAuth apps lack workflow scope; enable CI after gh auth -s workflow
 .github/workflows/
+__pycache__/

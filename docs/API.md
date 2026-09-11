@@ -85,7 +85,8 @@ curl -s localhost:8790/v1/turn/decide -H "Content-Type: application/json" -d "{\
 | GET | `/v1/modes` | Business modes |
 | GET | `/v1/personalities` | Personalities |
 | POST | `/v1/turn` | Full agent turn + context buffer + `fusion` metadata |
-| POST | `/v1/turn/decide` | End-of-turn only (+ optional `fusion` vector) |
+| POST | `/v1/turn/decide` | End-of-turn only (+ optional `fusion` vector). Pass `{"semantic": true}` to let the trained pocket-voice-complete model (local torch, `checkpoints/pocket-voice-complete/leg-3`) act as semantic authority — it may end a turn the heuristics wanted to extend. |
+| POST | `/v1/turn/complete` | Trained turn-completion classifier directly: `{transcript}` → `{complete, score, model}`. Local torch CPU, no data leaves the host. 503 when torch/checkpoint absent. |
 | POST | `/v1/fusion/metadata` | Build conversational Fusion input vector (emit only; Deep Fusion in POCKET) |
 | POST | `/v1/barge-in` | Cancel TTS? |
 | POST | `/v1/listening` | Set scenario/stress/expert |
